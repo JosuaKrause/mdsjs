@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <title>mds - js</title>
+  <meta charset="utf-8">
+  <script src="mdsjs.js" charset="utf-8"></script>
+</head>
+<body onload="start()">
+
+<script type="text/javascript">
+function start() {
+  var a = mdsjs.convertToMatrix([
+    [1, 2],
+    [3, 4],
+    [5, 6]
+  ], true);
+  var b = mdsjs.convertToMatrix([
+    [1, 2],
+    [3, 4]
+  ], true);
+  var c = a.mul(b);
+  console.log(a + "*\n" + b);
+  console.log("=\n" + c);
+  console.log("0.5 * (a - c) =\n" + a.add(c.neg()).scale(0.5));
+  console.log("" + mdsjs.eye(4));
+  console.log("" + mdsjs.eye(3, 5));
+}
+</script>
+</body>
+</html>
