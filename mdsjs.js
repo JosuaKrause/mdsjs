@@ -47,11 +47,15 @@ mdsjs = function() {
     return new Matrix(mat, rows, cols);
   };
   this.pivotRandom = function(m, k) {
+    if(!m.isQuadratic()) {
+      console.warn("quadratic matrix needed", m.rows(), m.cols());
+      return null;
+    }
     if(k < m.rows()) {
       console.warn("requested more pivots than elements", k, m.rows(), m.cols());
       return null;
     }
-    var mat = this.createArray(k, m.cols());
+    var mat = m.createArray(k, m.cols());
     var pivots = {};
     var pos = 0;
     for(var i = 0;i < k;i += 1) {
@@ -76,7 +80,7 @@ mdsjs = function() {
     this.cols = function() {
       return cols;
     };
-    this.isSquare = function() {
+    this.isQuadratic = function() {
       return rows === cols;
     };
     this.rowIter = function(row, cb) {
