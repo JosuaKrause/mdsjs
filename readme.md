@@ -27,3 +27,5 @@ The algorithm used for calculating the MDS is published at
   language = {English}
 }
 ```
+
+A Java version can be found at [mdsj] (http://www.inf.uni-konstanz.de/algo/software/mdsj/).
