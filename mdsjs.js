@@ -46,6 +46,27 @@ mdsjs = function() {
     }
     return new Matrix(mat, rows, cols);
   };
+  this.pivotRandom = function(m, k) {
+    if(k < m.rows()) {
+      console.warn("requested more pivots than elements", k, m.rows(), m.cols());
+      return null;
+    }
+    var mat = this.createArray(k, m.cols());
+    var pivots = {};
+    var pos = 0;
+    for(var i = 0;i < k;i += 1) {
+      var pivot = 0;
+      do {
+        pivot = Math.random() * m.cols();
+      } while(pivots[pivot]);
+      pivots[pivot] = true;
+      for(var c = 0;c < m.cols();c += 1) {
+        mat[pos] = m.distance(pivot, c);
+        pos += 1;
+      }
+    }
+    return new Matrix(mat, k, m.cols());
+  };
 
   function Matrix(mat, rows, cols) {
 
@@ -112,6 +133,57 @@ mdsjs = function() {
       mat[pos] = scale * this.getUnsafe(pos);
     }
     return new Matrix(mat, this.rows(), this.cols());
+  };
+  Matrix.prototype.squareElements = function() {
+    var mat = this.createArray(this.rows(), this.cols());
+    for(var pos = 0;pos < mat.length;pos += 1) {
+      mat[pos] = this.getUnsafe(pos) * this.getUnsafe(pos);
+    }
+    return new Matrix(mat, this.rows(), this.cols());
+  };
+  Matrix.prototype.doubleCenter = function() {
+    var rows = this.rows();
+    var cols = this.cols();
+    var mat = this.createArray(rows, cols);
+    for(var r = 0;r < rows;r += 1) {
+      var avg = 0;
+      this.rowIter(r, function(v) {
+        avg += v;
+      });
+      avg /= cols;
+      var pos = r * cols;
+      this.rowIter(r, function(v) {
+        mat[pos] = v - avg;
+        pos += 1;
+      });
+    }
+    for(var c = 0;c < cols;c += 1) {
+      var avg = 0;
+      var pos = c;
+      for(var r = 0;r < rows;r += 1) {
+        avg += mat[pos];
+        pos += cols;
+      }
+      avg /= rows;
+      pos = c;
+      for(var r = 0;r < rows;r += 1) {
+        mat[pos] -= avg;
+        pos += cols;
+      }
+    }
+    return new Matrix(mat, rows, cols);
+  };
+  Matrix.prototype.distance = function(colA, colB) {
+    var res = 0;
+    var posA = colA;
+    var posB = colB;
+    for(var r = 0;r < this.rows();r += 1) {
+      var v = this.getUnsafe(posA) - this.getUnsafe(posB);
+      res += v * v;
+      posA += this.cols();
+      posB += this.cols();
+    }
+    return Math.sqrt(res);
   };
   Matrix.iter = function(matA, matB, row, col, cb) {
     if(matA.cols() !== matB.rows()) {
