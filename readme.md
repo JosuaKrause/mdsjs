@@ -8,7 +8,7 @@ points using a custom distance function.
 
 **This is a work in progress and currently only computes MDS without most of the optimizations in the paper!**
 
-Refer to [index.html](index.html) for a small example of how to use the library.
+Refer to [index.html](index.html) for a small [example](josuakrause.github.io/mdsjs/) of how to use the library.
 Pull requests are highly appreciated.
 
 The algorithm used for calculating the MDS is published at
