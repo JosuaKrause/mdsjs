@@ -6,7 +6,7 @@ for elements is required to position them on a 2D plane. This can be useful
 for visualizing high-dimensional data, drawing arbitrary graphs, or projecting
 points using a custom distance function.
 
-**This is a work in progress and the library is not yet functional!**
+**This is a work in progress and currently only computes MDS without most of the optimizations in the paper!**
 
 The algorithm used for calculating the MDS is published at
 

@@ -180,6 +180,13 @@ mdsjs = function() {
     this.isQuadratic = function() {
       return rows === cols;
     };
+    this.rowsIter = function(cb) {
+      var pos = 0;
+      for(var r = 0;r < rows;r += 1) {
+        cb(mat.subarray(pos, pos + cols), r);
+        pos += cols;
+      }
+    };
     this.rowIter = function(row, cb) {
       var pos = row * cols;
       for(var i = 0;i < cols;i += 1) {

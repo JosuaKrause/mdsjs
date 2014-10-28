@@ -6,24 +6,30 @@
   <script src="mdsjs.js" charset="utf-8"></script>
 </head>
 <body onload="start()">
-
+  <canvas id="canvas" width="400" height="400" style="width: 400px; height: 400px"></canvas>
 <script type="text/javascript">
 function start() {
   var a = mdsjs.convertToMatrix([
-    [1, 2],
-    [3, 4],
-    [5, 6]
+    [0, 2, 2, 4, 6, 6, 4, 6, 6],
+    [2, 0, 2, 2, 3, 4, 2, 3, 4],
+    [2, 2, 0, 4, 4, 6, 4, 4, 6],
+    [4, 2, 4, 0, 1, 1, 4, 6, 6],
+    [6, 3, 4, 1, 0, 1, 2, 3, 4],
+    [6, 4, 6, 1, 1, 0, 4, 4, 6],
+    [4, 2, 4, 4, 2, 4, 0, 1, 1],
+    [6, 3, 4, 6, 3, 4, 1, 0, 1],
+    [6, 4, 6, 6, 4, 6, 1, 1, 0]
   ], true);
-  var b = mdsjs.convertToMatrix([
-    [1, 2],
-    [3, 4]
-  ], true);
-  var c = a.mul(b);
-  console.log(a + "*\n" + b);
-  console.log("=\n" + c);
-  console.log("0.5 * (a - c) =\n" + a.add(c.neg()).scale(0.5));
-  console.log("" + mdsjs.eye(4));
-  console.log("" + mdsjs.eye(3, 5));
+  var points = mdsjs.landmarkMDS(a, 2);
+  var ctx = document.getElementById("canvas").getContext("2d");
+  ctx.rect(0, 0, 400, 400);
+  ctx.stroke();
+  points.rowsIter(function(row) {
+    var x = row[0] * 50 + 200;
+    var y = row[1] * 50 + 200;
+    ctx.fillRect(x - 2, y - 2, 4, 4);
+  });
+  console.log("" + points);
 }
 </script>
 </body>
