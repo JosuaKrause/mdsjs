@@ -3,7 +3,104 @@
  */
 
 mdsjs = function() {
+  var thatMDS = this;
 
+  this.landmarkMDS = function(dist, dims) {
+    var rows = dist.rows();
+    var cols = dist.cols();
+    var distSq = dist.squareElements();
+    var mean = dist.createArray(1, cols);
+    for(var c = 0;c < cols;c += 1) {
+      distSq.colIter(c, function(v) {
+        mean[c] += v;
+      });
+      mean[c] /= rows;
+    }
+
+    function landmarkMatrix(mat) {
+      var rows = mat.rows();
+      var cols = mat.cols();
+      var perm = new Uint32Array(rows);
+      for(var r = 0;r < rows;r += 1) {
+        mat.rowIter(r, function(v, r, c) {
+          if(!v) {
+            perm[r] = c;
+          }
+        });
+      }
+      var lm = mat.createArray(rows, rows);
+      var pos = 0;
+      for(var r = 0;r < rows;r += 1) {
+        var mPos = r * cols;
+        for(var c = 0;c < cols;c += 1) {
+          lm[pos] = mat.getUnsafe(mPos + perm[c]);
+          pos += 1;
+        }
+      }
+      return new Matrix(lm, rows, rows);
+    }
+
+    var landmarkMatrix = landmarkMatrix(dist);
+    var eigenVals = dist.createArray(1, dims);
+    var eigenVecs = landmarkMatrix.squareElements().doubleCenter().scale(-0.5).eigen(eigenVals);
+    var tmp = eigenVecs.createArray(eigenVecs.rows(), eigenVecs.cols());
+    var pos = 0;
+    for(var r = 0;r < eigenVecs.rows();r += 1) {
+      var div = Math.sqrt(eigenVals[r]);
+      eigenVecs.rowIter(r, function(v) {
+        tmp[pos] = v / div;
+        pos += 1;
+      });
+    }
+    var positions = dist.createArray(cols, dims);
+    pos = 0;
+    for(var e = 0;e < cols;e += 1) {
+      var m = mean[e];
+      var tPos = 0;
+      for(var d = 0;d < dims;d += 1) {
+        var cur = 0;
+        distSq.colIter(e, function(v) {
+          cur -= 0.5 * (v - m) * tmp[tPos];
+          tPos += 1;
+        });
+        positions[pos] = cur;
+        pos += 1;
+      }
+    }
+    return new Matrix(positions, cols, dims);
+  };
+  this.normalizeVec = function(vec, f, t) {
+    var from = arguments.length > 1 ? f : 0;
+    var to = arguments.length > 2 ? t : vec.length;
+    var sum = 0;
+    for(var i = from;i < to;i += 1) {
+      sum += vec[i] * vec[i];
+    }
+    sum = Math.sqrt(sum);
+    for(var i = from;i < to;i += 1) {
+      vec[i] /= sum;
+    }
+  };
+  this.prod = function(vecA, fromA, vecB, fromB, len) {
+    var sum = 0;
+    var posA = fromA;
+    var posB = fromB;
+    for(var i = 0;i < len;i += 1) {
+      sum += vecA[posA] * vecB[posB];
+      posA += 1;
+      posB += 1;
+    }
+    return sum;
+  };
+  this.xcopy = function(fromVec, fromStart, toVec, toStart, len) {
+    var fromPos = fromStart;
+    var toPos = toStart;
+    for(var i = 0;i < len;i += 1) {
+      toVec[toPos] = fromVec[fromPos];
+      fromPos += 1;
+      toPos += 1;
+    }
+  };
   this.convertToMatrix = function(arrs, useFloat32) {
     var rows = arrs.length;
     if(!rows) {
@@ -188,6 +285,58 @@ mdsjs = function() {
       posB += this.cols();
     }
     return Math.sqrt(res);
+  };
+  this.EIGEN_EPS = 1e-6;
+  this.EIGEN_ITER = 100;
+  Matrix.prototype.eigen = function(eigenVals) {
+    var mat = this;
+    var d = eigenVals.length;
+    var rows = mat.rows();
+    var cols = mat.cols();
+    var content = mat.createArray(rows, cols);
+    var pos = 0;
+    for(var r = 0;r < rows;r += 1) {
+      mat.rowIter(r, function(v) {
+        content[pos] = v;
+        pos += 1;
+      });
+    }
+    var eigenVecs = mat.createArray(d, rows);
+    var ePos = -rows;
+    for(var m = 0;m < d;m += 1) {
+      if(m > 0) {
+        pos = 0;
+        for(var r = 0;r < rows;r += 1) {
+          for(var c = 0;c < cols;c += 1) {
+            content[pos] -= eigenVals[m - 1] * eigenVecs[ePos + r] * eigenVecs[ePos + c];
+            pos += 1;
+          }
+        }
+      }
+      ePos += rows;
+      pos = ePos;
+      for(var i = 0;i < rows;i += 1) {
+        eigenVecs[pos] = Math.random();
+        pos += 1;
+      }
+      thatMDS.normalizeVec(eigenVecs, ePos, ePos + rows);
+      var r = 0;
+      for(var iter = 0;Math.abs(1 - r) > thatMDS.EIGEN_EPS && iter < thatMDS.EIGEN_ITER;iter += 1) {
+        var q = mat.createArray(1, rows);
+        pos = 0;
+        for(var r = 0;r < rows;r += 1) {
+          for(var c = 0;c < cols;c += 1) {
+            q[r] += content[pos] * eigenVecs[ePos + c];
+            pos += 1;
+          }
+        }
+        eigenVals[m] = thatMDS.prod(eigenVecs, ePos, q, 0, rows);
+        thatMDS.normalizeVec(q);
+        r = Math.abs(thatMDS.prod(eigenVecs, ePos, q, 0, rows));
+        thatMDS.xcopy(q, 0, eigenVecs, ePos, rows);
+      }
+    }
+    return new Matrix(eigenVecs, d, rows);
   };
   Matrix.iter = function(matA, matB, row, col, cb) {
     if(matA.cols() !== matB.rows()) {
