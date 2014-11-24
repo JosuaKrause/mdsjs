@@ -7,15 +7,65 @@ mdsjs = function() {
 
   this.pca = function(positions) {
     var centered = positions.colCenter();
+    var rows = centered.rows();
     var cols = centered.cols();
-    var pca0 = centered.powerIter(centered.createArray(1, cols));
-    var pca1 = centered.powerIter(pca0);
+    var pca0 = centered.powerIter();
+    var mat = thatMDS.removeComponent(centered, pca0);
+    var pca1 = mat.powerIter();
     var res = centered.createArray(cols, 2);
     for(var ix = 0;ix < cols;ix += 1) {
       res[2*ix + 0] = pca0[ix];
       res[2*ix + 1] = pca1[ix];
     }
     return new Matrix(res, cols, 2);
+  };
+  this.GRAM_SCHMIDT_EPS = 1e-12;
+  this.removeComponent = function(mat, comp) {
+    // Gram–Schmidt process
+    var rows = mat.rows();
+    var cols = mat.cols();
+    comp.length === cols || console.warn("incompatible size", comp.length, cols);
+
+    function proj(vec, from, sub, fromSub, len) {
+      var res = mat.createArray(1, len);
+      var uv = 0;
+      var uu = 0;
+      for(var ix = 0;ix < len;ix += 1) {
+        uv += sub[fromSub + ix] * vec[from + ix];
+        uu += sub[fromSub + ix] * sub[fromSub + ix];
+      }
+      if(Math.abs(uv) < thatMDS.GRAM_SCHMIDT_EPS || Math.abs(uu) < thatMDS.GRAM_SCHMIDT_EPS || !Number.isFinite(uu) || !Number.isFinite(uv)) {
+        for(var ix = 0;ix < len;ix += 1) {
+          res[ix] = 0;
+        }
+      } else {
+        for(var ix = 0;ix < len;ix += 1) {
+          res[ix] = uv / uu * sub[fromSub + ix];
+        }
+      }
+      return res;
+    }
+
+    var nextMat = mat.createArray(rows, cols);
+    var pos = 0;
+    for(var r = 0;r < rows;r += 1) {
+      mat.rowIter(r, function(v) {
+        nextMat[pos] = v;
+        pos += 1;
+      });
+    }
+    for(var r = 0;r < rows;r += 1) {
+      var curPos = r * cols;
+      thatMDS.normalizeVec(nextMat, curPos, curPos + cols);
+      for(var ix = r + 1;ix < rows;ix += 1) {
+        var pos = ix * cols;
+        var p = proj(nextMat, pos, nextMat, curPos, cols);
+        for(var c = 0;c < cols;c += 1) {
+          nextMat[pos + c] -= p[c];
+        }
+      }
+    }
+    return new Matrix(nextMat, rows, cols);
   };
   this.pcaPositions = function(positions) {
     var pca = thatMDS.pca(positions);
@@ -93,6 +143,9 @@ mdsjs = function() {
       sum += vec[i] * vec[i];
     }
     sum = Math.sqrt(sum);
+    if(sum < 1e-30 || !Number.isFinite(sum)) { // don't scale when really small
+      return;
+    }
     for(var i = from;i < to;i += 1) {
       vec[i] /= sum;
     }
@@ -293,6 +346,25 @@ mdsjs = function() {
     }
     return new Matrix(mat, rows, cols);
   };
+  Matrix.prototype.rowCenter = function() {
+    var rows = this.rows();
+    var cols = this.cols();
+    var orig = this;
+    var mat = this.createArray(rows, cols);
+    var pos = 0;
+    for(var r = 0;r < rows;r += 1) {
+      var avg = 0;
+      orig.rowIter(r, function(v) {
+        avg += v;
+      });
+      avg /= cols;
+      orig.rowIter(r, function(v) {
+        mat[pos] = v - avg;
+        pos += 1;
+      });
+    }
+    return new Matrix(mat, rows, cols);
+  };
   Matrix.prototype.doubleCenter = function() {
     var rows = this.rows();
     var cols = this.cols();
@@ -337,8 +409,8 @@ mdsjs = function() {
     }
     return Math.sqrt(res);
   };
-  this.EIGEN_EPS = 1e-6;
-  this.EIGEN_ITER = 100;
+  this.EIGEN_EPS = 1e-7;
+  this.EIGEN_ITER = 10000;
   Matrix.prototype.eigen = function(eigenVals) {
     var mat = this;
     var d = eigenVals.length;
@@ -389,16 +461,13 @@ mdsjs = function() {
     }
     return new Matrix(eigenVecs, d, rows);
   };
-  Matrix.prototype.powerIter = function(prevR) {
+  Matrix.prototype.powerIter = function() {
     var mat = this;
     var rows = mat.rows();
     var cols = mat.cols();
-    prevR.length === cols || console.warn("incompatible length", prevR.length, cols);
     var r = mat.createArray(1, cols);
-    var pos = 0;
     for(var i = 0;i < cols;i += 1) {
-      r[pos] = Math.random();
-      pos += 1;
+      r[i] = Math.random();
     }
     var len = Number.POSITIVE_INFINITY;
     var stop = false;
@@ -407,10 +476,10 @@ mdsjs = function() {
       for(var row = 0;row < rows;row += 1) {
         var prod = 0;
         mat.rowIter(row, function(v, row, col) {
-          prod += (v - prevR[col]) * r[col];
+          prod += v * r[col];
         });
         mat.rowIter(row, function(v, row, col) {
-          s[col] += prod * (v - prevR[col]);
+          s[col] += prod * v;
         });
       }
       var nl = thatMDS.lengthSq(s);
