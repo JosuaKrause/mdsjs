@@ -10,12 +10,29 @@
     <canvas id="canvas" width="400" height="400" style="width: 400px; height: 400px"></canvas>
   </p><p>
     <a href="javascript:start()">recompute</a>
+    <a href="javascript:chg()">switch</a>
   </p><p>
+    <p>Computing: <span id="mode"></span></p>
     Input: <pre id="matrix"></pre>
     Output: <pre id="output"></pre>
   </p>
 <script type="text/javascript">
+var mds = true;
+
+function chg() {
+  mds = !mds;
+  start();
+}
+
 function start() {
+  if(mds) {
+    computeMDS();
+  } else {
+    computePCA();
+  }
+}
+
+function computeMDS() {
   var a = mdsjs.convertToMatrix([
     [0, 2, 2, 4, 6, 6, 4, 6, 6],
     [2, 0, 2, 2, 3, 4, 2, 3, 4],
@@ -37,8 +54,50 @@ function start() {
     var y = row[1] * 50 + 200;
     ctx.fillRect(x - 2, y - 2, 4, 4);
   });
+  document.getElementById("mode").innerText = "mds";
   document.getElementById("output").innerText = "" + points;
   document.getElementById("matrix").innerText = "" + a;
+}
+
+function computePCA() {
+  var posArr = [];
+  var xspread = 180;
+  var yspread = 150;
+
+  for(var i = 0;i < 1000;i += 1) {
+    var rnd = Math.random() * 2 * Math.PI;
+    posArr.push([ Math.cos(rnd) * xspread, Math.sin(rnd) * yspread ]);
+  }
+
+  var pos = mdsjs.convertToMatrix(posArr);
+  var pca = mdsjs.pca(pos);
+  var points = pos.mul(pca);
+  var ctx = document.getElementById("canvas").getContext("2d");
+  ctx.clearRect(0, 0, 400, 400);
+  ctx.rect(0, 0, 400, 400);
+  ctx.stroke();
+
+  ctx.save();
+  ctx.fillStyle = "blue";
+  pos.rowsIter(function(row) {
+    var x = row[0] + 200;
+    var y = row[1] + 200;
+    ctx.fillRect(x - 2, y - 2, 4, 4);
+  });
+  ctx.restore();
+
+  ctx.save();
+  ctx.fillStyle = "red";
+  points.rowsIter(function(row) {
+    var x = row[0] + 200;
+    var y = row[1] + 200;
+    ctx.fillRect(x - 2, y - 2, 4, 4);
+  });
+  ctx.restore();
+
+  document.getElementById("mode").innerText = "pca";
+  document.getElementById("output").innerText = pca + "\n" + points;
+  document.getElementById("matrix").innerText = "" + pos;
 }
 </script>
 </body>

@@ -10,10 +10,16 @@ mdsjs = function() {
     var cols = centered.cols();
     var pca0 = centered.powerIter(centered.createArray(1, cols));
     var pca1 = centered.powerIter(pca0);
-    var res = centered.createArray(2, cols);
-    thatMDS.xcopy(pca0, 0, res, 0, cols);
-    thatMDS.xcopy(pca1, 0, res, cols, cols);
+    var res = centered.createArray(cols, 2);
+    for(var ix = 0;ix < cols;ix += 1) {
+      res[2*ix + 0] = pca0[ix];
+      res[2*ix + 1] = pca1[ix];
+    }
     return new Matrix(res, 2, cols);
+  };
+  this.pcaPositions = function(positions) {
+    var pca = thatMDS.pca(positions);
+    return positions.mul(pca);
   };
   this.landmarkMDS = function(dist, dims) {
     var rows = dist.rows();
@@ -271,20 +277,19 @@ mdsjs = function() {
   Matrix.prototype.colCenter = function() {
     var rows = this.rows();
     var cols = this.cols();
+    var orig = this;
     var mat = this.createArray(rows, cols);
     for(var c = 0;c < cols;c += 1) {
       var avg = 0;
-      var pos = c;
-      for(var r = 0;r < rows;r += 1) {
-        avg += mat[pos];
-        pos += cols;
-      }
+      orig.colIter(c, function(v) {
+        avg += v;
+      });
       avg /= rows;
-      pos = c;
-      for(var r = 0;r < rows;r += 1) {
-        mat[pos] -= avg;
+      var pos = c;
+      orig.colIter(c, function(v) {
+        mat[pos] = v - avg;
         pos += cols;
-      }
+      });
     }
     return new Matrix(mat, rows, cols);
   };
@@ -384,7 +389,7 @@ mdsjs = function() {
     }
     return new Matrix(eigenVecs, d, rows);
   };
-  Matrix.powerIter = function(prevR) {
+  Matrix.prototype.powerIter = function(prevR) {
     var mat = this;
     var rows = mat.rows();
     var cols = mat.cols();
