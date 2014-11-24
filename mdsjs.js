@@ -15,7 +15,7 @@ mdsjs = function() {
       res[2*ix + 0] = pca0[ix];
       res[2*ix + 1] = pca1[ix];
     }
-    return new Matrix(res, 2, cols);
+    return new Matrix(res, cols, 2);
   };
   this.pcaPositions = function(positions) {
     var pca = thatMDS.pca(positions);
