@@ -47,6 +47,7 @@ function computeMDS() {
   var points = mdsjs.landmarkMDS(a, 2);
   var ctx = document.getElementById("canvas").getContext("2d");
   ctx.clearRect(0, 0, 400, 400);
+  ctx.beginPath();
   ctx.rect(0, 0, 400, 400);
   ctx.stroke();
   points.rowsIter(function(row) {
@@ -74,6 +75,7 @@ function computePCA() {
   var points = pos.mul(pca);
   var ctx = document.getElementById("canvas").getContext("2d");
   ctx.clearRect(0, 0, 400, 400);
+  ctx.beginPath();
   ctx.rect(0, 0, 400, 400);
   ctx.stroke();
 
