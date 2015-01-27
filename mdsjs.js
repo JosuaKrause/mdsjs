@@ -510,17 +510,17 @@ mdsjs = function() {
       console.warn("incompatible dimensions", matA.rows() + "x" + matA.cols(), matB.rows() + "x" + matB.cols());
       return null;
     }
+    // cache friendly iteration (a rows -> a cols/b rows -> b cols)
+    // TODO experiment with (a cols -> a rows -> b cols)
     var mat = matA.createArray(matA.rows(), matB.cols());
-    var pos = 0;
     for(var r = 0;r < matA.rows();r += 1) {
-      for(var c = 0;c < matB.cols();c += 1) {
-        var sum = 0;
-        Matrix.iter(matA, matB, r, c, function(a, b, r, i, c) {
-          sum += a * b;
+      matA.rowIter(r, function(a, _, k) {
+        var pos = r * matB.cols();
+        matB.rowIter(k, function(b, _, _) {
+          mat[pos] += a * b;
+          pos += 1;
         });
-        mat[pos] = sum;
-        pos += 1;
-      }
+      });
     }
     return new Matrix(mat, matA.rows(), matB.cols());
   };
