@@ -19,6 +19,22 @@ mdsjs = function() {
     }
     return new Matrix(res, cols, 2);
   };
+  this.pcaAsync = function(positions, cb) {
+    var centered = positions.colCenter();
+    var rows = centered.rows();
+    var cols = centered.cols();
+    centered.powerIterAsync(function(pca0) {
+      var mat = thatMDS.removeComponent(centered, pca0);
+      mat.powerIterAsync(function(pca1) {
+        var res = centered.createArray(cols, 2);
+        for(var ix = 0;ix < cols;ix += 1) {
+          res[2*ix + 0] = pca0[ix];
+          res[2*ix + 1] = pca1[ix];
+        }
+        cb(new Matrix(res, cols, 2));
+      });
+    });
+  };
   this.GRAM_SCHMIDT_EPS = 1e-12;
   this.removeComponent = function(mat, comp) {
     // Gram–Schmidt process
@@ -411,6 +427,7 @@ mdsjs = function() {
   };
   this.EIGEN_EPS = 1e-7;
   this.EIGEN_ITER = 10000;
+  this.EIGEN_ITER_ASYNC = 200;
   Matrix.prototype.eigen = function(eigenVals) {
     var mat = this;
     var d = eigenVals.length;
@@ -491,6 +508,48 @@ mdsjs = function() {
       r = s;
     }
     return r;
+  };
+  Matrix.prototype.powerIterAsync = function(cb) {
+    var mat = this;
+    var rows = mat.rows();
+    var cols = mat.cols();
+    var r = mat.createArray(1, cols);
+    for(var i = 0;i < cols;i += 1) {
+      r[i] = Math.random();
+    }
+    var len = Number.POSITIVE_INFINITY;
+    var stop = false;
+    var iter = 0;
+
+    function iterate() {
+      for(var ix = 0;ix < thatMDS.EIGEN_ITER_ASYNC;ix += 1) {
+        if(iter >= thatMDS.EIGEN_ITER || stop) {
+          cb(r);
+          return;
+        }
+        var s = mat.createArray(1, cols);
+        for(var row = 0;row < rows;row += 1) {
+          var prod = 0;
+          mat.rowIter(row, function(v, row, col) {
+            prod += v * r[col];
+          });
+          mat.rowIter(row, function(v, row, col) {
+            s[col] += prod * v;
+          });
+        }
+        var nl = thatMDS.lengthSq(s);
+        if(Math.abs(len - nl) < thatMDS.EIGEN_EPS) {
+          stop = true;
+        }
+        len = nl;
+        thatMDS.normalizeVec(s);
+        r = s;
+        iter += 1;
+      }
+      setTimeout(iterate, 0);
+    }
+
+    setTimeout(iterate, 0);
   };
   Matrix.iter = function(matA, matB, row, col, cb) {
     if(matA.cols() !== matB.rows()) {
