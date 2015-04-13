@@ -17,18 +17,20 @@ mdsjs = function() {
         };
       }
       if(!depth) {
-        var cc = null;
-        try {
-          depth += 1;
-          f();
-        } catch(e) {
-          if(!e.__continuation) {
-            throw e;
+        var cc = f;
+        while(cc) {
+          try {
+            depth += 1;
+            cc();
+            cc = null;
+          } catch(e) {
+            if(!e.__continuation) {
+              throw e;
+            }
+            cc = e.__continuation;
           }
-          cc = e.__continuation;
+          depth = 0;
         }
-        depth = 0;
-        cc && cc();
       } else {
         depth += 1;
         f();
