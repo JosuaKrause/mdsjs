@@ -44,20 +44,21 @@ function computeMDS() {
     [6, 3, 4, 6, 3, 4, 1, 0, 1],
     [6, 4, 6, 6, 4, 6, 1, 1, 0]
   ], true);
-  var points = mdsjs.landmarkMDS(a, 2);
-  var ctx = document.getElementById("canvas").getContext("2d");
-  ctx.clearRect(0, 0, 400, 400);
-  ctx.beginPath();
-  ctx.rect(0, 0, 400, 400);
-  ctx.stroke();
-  points.rowsIter(function(row) {
-    var x = row[0] * 50 + 200;
-    var y = row[1] * 50 + 200;
-    ctx.fillRect(x - 2, y - 2, 4, 4);
+  mdsjs.landmarkMDSAsync(a, 2, function(points) {
+    var ctx = document.getElementById("canvas").getContext("2d");
+    ctx.clearRect(0, 0, 400, 400);
+    ctx.beginPath();
+    ctx.rect(0, 0, 400, 400);
+    ctx.stroke();
+    points.rowsIter(function(row) {
+      var x = row[0] * 50 + 200;
+      var y = row[1] * 50 + 200;
+      ctx.fillRect(x - 2, y - 2, 4, 4);
+    });
+    document.getElementById("mode").innerText = "mds";
+    document.getElementById("output").innerText = "" + points;
+    document.getElementById("matrix").innerText = "" + a;
   });
-  document.getElementById("mode").innerText = "mds";
-  document.getElementById("output").innerText = "" + points;
-  document.getElementById("matrix").innerText = "" + a;
 }
 
 function computePCA() {
@@ -71,35 +72,36 @@ function computePCA() {
   }
 
   var pos = mdsjs.convertToMatrix(posArr);
-  var pca = mdsjs.pca(pos);
-  var points = pos.mul(pca);
-  var ctx = document.getElementById("canvas").getContext("2d");
-  ctx.clearRect(0, 0, 400, 400);
-  ctx.beginPath();
-  ctx.rect(0, 0, 400, 400);
-  ctx.stroke();
+  mdsjs.pcaAsync(pos, function(pca) {
+    var points = pos.mul(pca);
+    var ctx = document.getElementById("canvas").getContext("2d");
+    ctx.clearRect(0, 0, 400, 400);
+    ctx.beginPath();
+    ctx.rect(0, 0, 400, 400);
+    ctx.stroke();
 
-  ctx.save();
-  ctx.fillStyle = "blue";
-  pos.rowsIter(function(row) {
-    var x = row[0] + 200;
-    var y = row[1] + 200;
-    ctx.fillRect(x - 2, y - 2, 4, 4);
+    ctx.save();
+    ctx.fillStyle = "blue";
+    pos.rowsIter(function(row) {
+      var x = row[0] + 200;
+      var y = row[1] + 200;
+      ctx.fillRect(x - 2, y - 2, 4, 4);
+    });
+    ctx.restore();
+
+    ctx.save();
+    ctx.fillStyle = "red";
+    points.rowsIter(function(row) {
+      var x = row[0] + 200;
+      var y = row[1] + 200;
+      ctx.fillRect(x - 2, y - 2, 4, 4);
+    });
+    ctx.restore();
+
+    document.getElementById("mode").innerText = "pca";
+    document.getElementById("output").innerText = pca + "\n" + points;
+    document.getElementById("matrix").innerText = "" + pos;
   });
-  ctx.restore();
-
-  ctx.save();
-  ctx.fillStyle = "red";
-  points.rowsIter(function(row) {
-    var x = row[0] + 200;
-    var y = row[1] + 200;
-    ctx.fillRect(x - 2, y - 2, 4, 4);
-  });
-  ctx.restore();
-
-  document.getElementById("mode").innerText = "pca";
-  document.getElementById("output").innerText = pca + "\n" + points;
-  document.getElementById("matrix").innerText = "" + pos;
 }
 </script>
 </body>

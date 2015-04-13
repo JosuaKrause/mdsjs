@@ -87,10 +87,35 @@ mdsjs = function() {
     var pca = thatMDS.pca(positions);
     return positions.mul(pca);
   };
-  this.landmarkMDS = function(dist, dims) {
+
+  function landmarkMatrix(mat) {
+    var rows = mat.rows();
+    var cols = mat.cols();
+    var perm = new Uint32Array(rows);
+    for(var r = 0;r < rows;r += 1) {
+      mat.rowIter(r, function(v, r, c) {
+        if(!v) {
+          perm[r] = c;
+        }
+      });
+    }
+    var lm = mat.createArray(rows, rows);
+    var pos = 0;
+    for(var r = 0;r < rows;r += 1) {
+      var mPos = r * cols;
+      for(var c = 0;c < cols;c += 1) {
+        lm[pos] = mat.getUnsafe(mPos + perm[c]);
+        pos += 1;
+      }
+    }
+    return new Matrix(lm, rows, rows);
+  }
+
+  function landmarkResult(dist, dims, eigenVecs, eigenVals) {
     var rows = dist.rows();
     var cols = dist.cols();
     var distSq = dist.squareElements();
+
     var mean = dist.createArray(1, cols);
     for(var c = 0;c < cols;c += 1) {
       distSq.colIter(c, function(v) {
@@ -99,32 +124,6 @@ mdsjs = function() {
       mean[c] /= rows;
     }
 
-    function landmarkMatrix(mat) {
-      var rows = mat.rows();
-      var cols = mat.cols();
-      var perm = new Uint32Array(rows);
-      for(var r = 0;r < rows;r += 1) {
-        mat.rowIter(r, function(v, r, c) {
-          if(!v) {
-            perm[r] = c;
-          }
-        });
-      }
-      var lm = mat.createArray(rows, rows);
-      var pos = 0;
-      for(var r = 0;r < rows;r += 1) {
-        var mPos = r * cols;
-        for(var c = 0;c < cols;c += 1) {
-          lm[pos] = mat.getUnsafe(mPos + perm[c]);
-          pos += 1;
-        }
-      }
-      return new Matrix(lm, rows, rows);
-    }
-
-    var landmarkMatrix = landmarkMatrix(dist);
-    var eigenVals = dist.createArray(1, dims);
-    var eigenVecs = landmarkMatrix.squareElements().doubleCenter().scale(-0.5).eigen(eigenVals);
     var tmp = eigenVecs.createArray(eigenVecs.rows(), eigenVecs.cols());
     var pos = 0;
     for(var r = 0;r < eigenVecs.rows();r += 1) {
@@ -150,6 +149,20 @@ mdsjs = function() {
       }
     }
     return new Matrix(positions, cols, dims);
+  }
+
+  this.landmarkMDS = function(dist, dims) {
+    var lm = landmarkMatrix(dist);
+    var eigenVals = dist.createArray(1, dims);
+    var eigenVecs = lm.squareElements().doubleCenter().scale(-0.5).eigen(eigenVals);
+    return landmarkResult(dist, dims, eigenVecs, eigenVals);
+  };
+  this.landmarkMDSAsync = function(dist, dims, cb) {
+    var lm = landmarkMatrix(dist);
+    var eigenVals = dist.createArray(1, dims);
+    lm.squareElements().doubleCenter().scale(-0.5).eigenAsync(eigenVals, function(eigenVecs) {
+      cb(landmarkResult(dist, dims, eigenVecs, eigenVals));
+    });
   };
   this.normalizeVec = function(vec, f, t) {
     var from = arguments.length > 1 ? f : 0;
@@ -477,6 +490,79 @@ mdsjs = function() {
       }
     }
     return new Matrix(eigenVecs, d, rows);
+  };
+  Matrix.prototype.eigenAsync = function(eigenVals, cb) {
+    var mat = this;
+    var d = eigenVals.length;
+    var rows = mat.rows();
+    var cols = mat.cols();
+    var content = mat.createArray(rows, cols);
+    var pos = 0;
+    for(var r = 0;r < rows;r += 1) {
+      mat.rowIter(r, function(v) {
+        content[pos] = v;
+        pos += 1;
+      });
+    }
+    var eigenVecs = mat.createArray(d, rows);
+    var ePos = -rows;
+    var m = 0;
+    var r = 0;
+    var iter = 0;
+
+    function innerLoop() {
+      for(var ix = 0;ix < thatMDS.EIGEN_ITER_ASYNC;ix += 1) {
+        if(!(Math.abs(1 - r) > thatMDS.EIGEN_EPS && iter < thatMDS.EIGEN_ITER)) {
+          m += 1;
+          iterate();
+          return;
+        }
+        var q = mat.createArray(1, rows);
+        pos = 0;
+        for(var rix = 0;rix < rows;rix += 1) {
+          for(var cix = 0;cix < cols;cix += 1) {
+            q[rix] += content[pos] * eigenVecs[ePos + cix];
+            pos += 1;
+          }
+        }
+        eigenVals[m] = thatMDS.prod(eigenVecs, ePos, q, 0, rows);
+        thatMDS.normalizeVec(q);
+        r = Math.abs(thatMDS.prod(eigenVecs, ePos, q, 0, rows));
+        thatMDS.xcopy(q, 0, eigenVecs, ePos, rows);
+        iter += 1;
+      }
+      setTimeout(innerLoop, 0);
+    } // innerLoop
+
+    function iterate() {
+      if(!(m < d)) {
+        cb(new Matrix(eigenVecs, d, rows));
+        return;
+      }
+
+      if(m > 0) {
+        pos = 0;
+        for(var rix = 0;rix < rows;rix += 1) {
+          for(var cix = 0;cix < cols;cix += 1) {
+            content[pos] -= eigenVals[m - 1] * eigenVecs[ePos + rix] * eigenVecs[ePos + cix];
+            pos += 1;
+          }
+        }
+      }
+      ePos += rows;
+      pos = ePos;
+      for(var i = 0;i < rows;i += 1) {
+        eigenVecs[pos] = Math.random();
+        pos += 1;
+      }
+      thatMDS.normalizeVec(eigenVecs, ePos, ePos + rows);
+      r = 0;
+      iter = 0;
+
+      setTimeout(innerLoop, 0);
+    } // iterate
+
+    iterate();
   };
   Matrix.prototype.powerIter = function() {
     var mat = this;
