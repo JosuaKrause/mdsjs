@@ -5,21 +5,46 @@
 mdsjs = function() {
   var thatMDS = this;
 
-  this.pca = function(positions) {
-    var centered = positions.colCenter();
-    var rows = centered.rows();
-    var cols = centered.cols();
-    var pca0 = centered.powerIter();
-    var mat = thatMDS.removeComponent(centered, pca0);
-    var pca1 = mat.powerIter();
-    var res = centered.createArray(cols, 2);
-    for(var ix = 0;ix < cols;ix += 1) {
-      res[2*ix + 0] = pca0[ix];
-      res[2*ix + 1] = pca1[ix];
-    }
-    return new Matrix(res, cols, 2);
+  this.CALL_ASYNC = function(f) {
+    setTimeout(f, 0);
   };
-  this.pcaAsync = function(positions, cb) {
+  this.getCallDirect = function() {
+    var depth = 0;
+    return function(f) {
+      if(depth > 20) { // prevent stack-overflows
+        throw {
+          __continuation: f
+        };
+      }
+      if(!depth) {
+        var cc = null;
+        try {
+          depth += 1;
+          f();
+        } catch(e) {
+          if(!e.__continuation) {
+            throw e;
+          }
+          cc = e.__continuation;
+        }
+        depth = 0;
+        cc && cc();
+      } else {
+        depth += 1;
+        f();
+      }
+    };
+  };
+
+  this.pca = function(positions) {
+    var res;
+    thatMDS.pcaAsync(positions, function(mat) {
+      res = mat;
+    }, thatMDS.getCallDirect());
+    return res;
+  };
+  this.pcaAsync = function(positions, cb, argCall) {
+    var call = arguments.length > 2 ? argCall : thatMDS.CALL_ASYNC;
     var centered = positions.colCenter();
     var rows = centered.rows();
     var cols = centered.cols();
@@ -32,8 +57,8 @@ mdsjs = function() {
           res[2*ix + 1] = pca1[ix];
         }
         cb(new Matrix(res, cols, 2));
-      });
-    });
+      }, call);
+    }, call);
   };
   this.GRAM_SCHMIDT_EPS = 1e-12;
   this.removeComponent = function(mat, comp) {
@@ -87,82 +112,84 @@ mdsjs = function() {
     var pca = thatMDS.pca(positions);
     return positions.mul(pca);
   };
-
-  function landmarkMatrix(mat) {
-    var rows = mat.rows();
-    var cols = mat.cols();
-    var perm = new Uint32Array(rows);
-    for(var r = 0;r < rows;r += 1) {
-      mat.rowIter(r, function(v, r, c) {
-        if(!v) {
-          perm[r] = c;
-        }
-      });
-    }
-    var lm = mat.createArray(rows, rows);
-    var pos = 0;
-    for(var r = 0;r < rows;r += 1) {
-      var mPos = r * cols;
-      for(var c = 0;c < cols;c += 1) {
-        lm[pos] = mat.getUnsafe(mPos + perm[c]);
-        pos += 1;
-      }
-    }
-    return new Matrix(lm, rows, rows);
-  }
-
-  function landmarkResult(dist, dims, eigenVecs, eigenVals) {
-    var rows = dist.rows();
-    var cols = dist.cols();
-    var distSq = dist.squareElements();
-
-    var mean = dist.createArray(1, cols);
-    for(var c = 0;c < cols;c += 1) {
-      distSq.colIter(c, function(v) {
-        mean[c] += v;
-      });
-      mean[c] /= rows;
-    }
-
-    var tmp = eigenVecs.createArray(eigenVecs.rows(), eigenVecs.cols());
-    var pos = 0;
-    for(var r = 0;r < eigenVecs.rows();r += 1) {
-      var div = Math.sqrt(eigenVals[r]);
-      eigenVecs.rowIter(r, function(v) {
-        tmp[pos] = v / div;
-        pos += 1;
-      });
-    }
-    var positions = dist.createArray(cols, dims);
-    pos = 0;
-    for(var e = 0;e < cols;e += 1) {
-      var m = mean[e];
-      var tPos = 0;
-      for(var d = 0;d < dims;d += 1) {
-        var cur = 0;
-        distSq.colIter(e, function(v) {
-          cur -= 0.5 * (v - m) * tmp[tPos];
-          tPos += 1;
-        });
-        positions[pos] = cur;
-        pos += 1;
-      }
-    }
-    return new Matrix(positions, cols, dims);
-  }
-
   this.landmarkMDS = function(dist, dims) {
-    var lm = landmarkMatrix(dist);
-    var eigenVals = dist.createArray(1, dims);
-    var eigenVecs = lm.squareElements().doubleCenter().scale(-0.5).eigen(eigenVals);
-    return landmarkResult(dist, dims, eigenVecs, eigenVals);
+    var res;
+    thatMDS.landmarkMDSAsync(dist, dims, function(mat) {
+      res = mat;
+    }, thatMDS.getCallDirect());
+    return res;
   };
-  this.landmarkMDSAsync = function(dist, dims, cb) {
+  this.landmarkMDSAsync = function(dist, dims, cb, argCall) {
+
+    function landmarkMatrix(mat) {
+      var rows = mat.rows();
+      var cols = mat.cols();
+      var perm = new Uint32Array(rows);
+      for(var r = 0;r < rows;r += 1) {
+        mat.rowIter(r, function(v, r, c) {
+          if(!v) {
+            perm[r] = c;
+          }
+        });
+      }
+      var lm = mat.createArray(rows, rows);
+      var pos = 0;
+      for(var r = 0;r < rows;r += 1) {
+        var mPos = r * cols;
+        for(var c = 0;c < cols;c += 1) {
+          lm[pos] = mat.getUnsafe(mPos + perm[c]);
+          pos += 1;
+        }
+      }
+      return new Matrix(lm, rows, rows);
+    }
+
+    function landmarkResult(dist, dims, eigenVecs, eigenVals) {
+      var rows = dist.rows();
+      var cols = dist.cols();
+      var distSq = dist.squareElements();
+
+      var mean = dist.createArray(1, cols);
+      for(var c = 0;c < cols;c += 1) {
+        distSq.colIter(c, function(v) {
+          mean[c] += v;
+        });
+        mean[c] /= rows;
+      }
+
+      var tmp = eigenVecs.createArray(eigenVecs.rows(), eigenVecs.cols());
+      var pos = 0;
+      for(var r = 0;r < eigenVecs.rows();r += 1) {
+        var div = Math.sqrt(eigenVals[r]);
+        eigenVecs.rowIter(r, function(v) {
+          tmp[pos] = v / div;
+          pos += 1;
+        });
+      }
+      var positions = dist.createArray(cols, dims);
+      pos = 0;
+      for(var e = 0;e < cols;e += 1) {
+        var m = mean[e];
+        var tPos = 0;
+        for(var d = 0;d < dims;d += 1) {
+          var cur = 0;
+          distSq.colIter(e, function(v) {
+            cur -= 0.5 * (v - m) * tmp[tPos];
+            tPos += 1;
+          });
+          positions[pos] = cur;
+          pos += 1;
+        }
+      }
+      return new Matrix(positions, cols, dims);
+    }
+
+    var call = arguments.length > 3 ? argCall : thatMDS.CALL_ASYNC;
     var lm = landmarkMatrix(dist);
     var eigenVals = dist.createArray(1, dims);
     lm.squareElements().doubleCenter().scale(-0.5).eigenAsync(eigenVals, function(eigenVecs) {
       cb(landmarkResult(dist, dims, eigenVecs, eigenVals));
-    });
+    }, call);
   };
   this.normalizeVec = function(vec, f, t) {
     var from = arguments.length > 1 ? f : 0;
@@ -442,56 +469,14 @@ mdsjs = function() {
   this.EIGEN_ITER = 10000;
   this.EIGEN_ITER_ASYNC = 200;
   Matrix.prototype.eigen = function(eigenVals) {
-    var mat = this;
-    var d = eigenVals.length;
-    var rows = mat.rows();
-    var cols = mat.cols();
-    var content = mat.createArray(rows, cols);
-    var pos = 0;
-    for(var r = 0;r < rows;r += 1) {
-      mat.rowIter(r, function(v) {
-        content[pos] = v;
-        pos += 1;
-      });
-    }
-    var eigenVecs = mat.createArray(d, rows);
-    var ePos = -rows;
-    for(var m = 0;m < d;m += 1) {
-      if(m > 0) {
-        pos = 0;
-        for(var r = 0;r < rows;r += 1) {
-          for(var c = 0;c < cols;c += 1) {
-            content[pos] -= eigenVals[m - 1] * eigenVecs[ePos + r] * eigenVecs[ePos + c];
-            pos += 1;
-          }
-        }
-      }
-      ePos += rows;
-      pos = ePos;
-      for(var i = 0;i < rows;i += 1) {
-        eigenVecs[pos] = Math.random();
-        pos += 1;
-      }
-      thatMDS.normalizeVec(eigenVecs, ePos, ePos + rows);
-      var r = 0;
-      for(var iter = 0;Math.abs(1 - r) > thatMDS.EIGEN_EPS && iter < thatMDS.EIGEN_ITER;iter += 1) {
-        var q = mat.createArray(1, rows);
-        pos = 0;
-        for(var r = 0;r < rows;r += 1) {
-          for(var c = 0;c < cols;c += 1) {
-            q[r] += content[pos] * eigenVecs[ePos + c];
-            pos += 1;
-          }
-        }
-        eigenVals[m] = thatMDS.prod(eigenVecs, ePos, q, 0, rows);
-        thatMDS.normalizeVec(q);
-        r = Math.abs(thatMDS.prod(eigenVecs, ePos, q, 0, rows));
-        thatMDS.xcopy(q, 0, eigenVecs, ePos, rows);
-      }
-    }
-    return new Matrix(eigenVecs, d, rows);
+    var res;
+    this.eigenAsync(eigenVals, function(mat) {
+      res = mat;
+    }, thatMDS.getCallDirect());
+    return res;
   };
-  Matrix.prototype.eigenAsync = function(eigenVals, cb) {
+  Matrix.prototype.eigenAsync = function(eigenVals, cb, argCall) {
+    var call = arguments.length > 2 ? argCall : thatMDS.CALL_ASYNC;
     var mat = this;
     var d = eigenVals.length;
     var rows = mat.rows();
@@ -531,7 +516,7 @@ mdsjs = function() {
         thatMDS.xcopy(q, 0, eigenVecs, ePos, rows);
         iter += 1;
       }
-      setTimeout(innerLoop, 0);
+      call(innerLoop);
     } // innerLoop
 
     function iterate() {
@@ -559,43 +544,20 @@ mdsjs = function() {
       r = 0;
       iter = 0;
 
-      setTimeout(innerLoop, 0);
+      call(innerLoop);
     } // iterate
 
     iterate();
   };
   Matrix.prototype.powerIter = function() {
-    var mat = this;
-    var rows = mat.rows();
-    var cols = mat.cols();
-    var r = mat.createArray(1, cols);
-    for(var i = 0;i < cols;i += 1) {
-      r[i] = Math.random();
-    }
-    var len = Number.POSITIVE_INFINITY;
-    var stop = false;
-    for(var iter = 0;iter < thatMDS.EIGEN_ITER && !stop;iter += 1) {
-      var s = mat.createArray(1, cols);
-      for(var row = 0;row < rows;row += 1) {
-        var prod = 0;
-        mat.rowIter(row, function(v, row, col) {
-          prod += v * r[col];
-        });
-        mat.rowIter(row, function(v, row, col) {
-          s[col] += prod * v;
-        });
-      }
-      var nl = thatMDS.lengthSq(s);
-      if(Math.abs(len - nl) < thatMDS.EIGEN_EPS) {
-        stop = true;
-      }
-      len = nl;
-      thatMDS.normalizeVec(s);
-      r = s;
-    }
-    return r;
+    var res;
+    this.powerIterAsync(function(r) {
+      res = r;
+    }, thatMDS.getCallDirect());
+    return res;
   };
-  Matrix.prototype.powerIterAsync = function(cb) {
+  Matrix.prototype.powerIterAsync = function(cb, argCall) {
+    var call = arguments.length > 1 ? argCall : thatMDS.CALL_ASYNC;
     var mat = this;
     var rows = mat.rows();
     var cols = mat.cols();
@@ -632,10 +594,10 @@ mdsjs = function() {
         r = s;
         iter += 1;
       }
-      setTimeout(iterate, 0);
+      call(iterate);
     }
 
-    setTimeout(iterate, 0);
+    iterate();
   };
   Matrix.iter = function(matA, matB, row, col, cb) {
     if(matA.cols() !== matB.rows()) {
