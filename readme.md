@@ -7,13 +7,13 @@ So far, PCA and MDS are supported.
 Refer to [index.html](index.html) for a small [example](https://josuakrause.github.io/mdsjs/) of how to use the library.
 Pull requests are highly appreciated.
 
-** PCA
+## PCA
 
 You simply need to input the high dimensional vectors to compute the first two
 principal components which then can be used to project your data.
 The implementation is just straight forward power iteration.
 
-** MDS
+## MDS
 
 For MDS only a distance matrix for elements is required to position
 them on a 2D plane. This can be useful for visualizing high-dimensional data,
