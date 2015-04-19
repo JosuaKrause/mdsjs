@@ -1,15 +1,23 @@
-MDS for JavaScript
-==================
+Projections for JavaScript
+==========================
 
-A multi dimensional scaling library for JavaScript. Only a distance matrix
-for elements is required to position them on a 2D plane. This can be useful
-for visualizing high-dimensional data, drawing arbitrary graphs, or projecting
-points using a custom distance function.
-
-**This is a work in progress and currently only computes MDS without most of the optimizations in the paper!**
+A library for dimensionality reducing projections for JavaScript.
+So far, PCA and MDS are supported.
 
 Refer to [index.html](index.html) for a small [example](https://josuakrause.github.io/mdsjs/) of how to use the library.
 Pull requests are highly appreciated.
+
+** PCA
+
+You simply need to input the high dimensional vectors to compute the first two
+principal components which then can be used to project your data.
+The implementation is just straight forward power iteration.
+
+** MDS
+
+For MDS only a distance matrix for elements is required to position
+them on a 2D plane. This can be useful for visualizing high-dimensional data,
+drawing arbitrary graphs, or projecting points using a custom distance function.
 
 The algorithm used for calculating the MDS is published at
 
@@ -31,4 +39,5 @@ The algorithm used for calculating the MDS is published at
 }
 ```
 
+Currently, most of the optimizations in the paper are *not* implemented yet, though.
 A Java implementation of the paper can be found at [mdsj] (http://www.inf.uni-konstanz.de/algo/software/mdsj/).
