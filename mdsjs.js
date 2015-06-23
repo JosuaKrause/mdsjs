@@ -316,6 +316,21 @@ mdsjs = function() {
     this.isQuadratic = function() {
       return rows === cols;
     };
+    this.someRows = function(cb) {
+      var pos = 0;
+      for(var r = 0;r < rows;r += 1) {
+        if(cb(mat.subarray(pos, pos + cols), r)) {
+          return true;
+        }
+        pos += cols;
+      }
+      return false;
+    };
+    this.everyRows = function(cb) {
+      return !this.someRow(function(row, ix) {
+        return !cb(row, ix);
+      });
+    };
     this.rowsIter = function(cb) {
       var pos = 0;
       for(var r = 0;r < rows;r += 1) {
