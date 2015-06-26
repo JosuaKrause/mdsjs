@@ -5,6 +5,29 @@
 mdsjs = function() {
   var thatMDS = this;
 
+  this.DEBUG = false;
+  this.noNaNs = function(arr) {
+    for(var ix = 0;ix < arr.length;ix += 1) {
+      if(Number.isNaN(arr[ix])) {
+        throw new Error("NaN in array");
+      }
+    }
+  };
+  this.noZeros = function(arr) {
+    for(var ix = 0;ix < arr.length;ix += 1) {
+      if(Number.isNaN(arr[ix]) || arr[ix] === 0) {
+        throw new Error(arr[ix] === 0 ? "0 in array" : "NaN in array");
+      }
+    }
+  };
+  this.onlyPositive = function(arr) {
+    for(var ix = 0;ix < arr.length;ix += 1) {
+      if(Number.isNaN(arr[ix]) || !(arr[ix] > 0)) {
+        throw new Error(!(arr[ix] > 0) ? arr[ix] + " in array" : "NaN in array");
+      }
+    }
+  };
+
   this.CALL_ASYNC = function(f) {
     setTimeout(f, 0);
   };
@@ -124,6 +147,7 @@ mdsjs = function() {
   this.landmarkMDSAsync = function(dist, dims, cb, argCall) {
 
     function landmarkMatrix(mat) {
+      thatMDS.DEBUG && mat.noNaNs();
       var rows = mat.rows();
       var cols = mat.cols();
       var perm = new Uint32Array(rows);
@@ -134,6 +158,7 @@ mdsjs = function() {
           }
         });
       }
+      thatMDS.DEBUG && thatMDS.noNaNs(perm);
       var lm = mat.createArray(rows, rows);
       var pos = 0;
       for(var r = 0;r < rows;r += 1) {
@@ -143,6 +168,7 @@ mdsjs = function() {
           pos += 1;
         }
       }
+      thatMDS.DEBUG && thatMDS.noNaNs(lm);
       return new Matrix(lm, rows, rows);
     }
 
@@ -150,6 +176,7 @@ mdsjs = function() {
       var rows = dist.rows();
       var cols = dist.cols();
       var distSq = dist.squareElements();
+      thatMDS.DEBUG && distSq.noNaNs();
 
       var mean = dist.createArray(1, cols);
       for(var c = 0;c < cols;c += 1) {
@@ -158,16 +185,21 @@ mdsjs = function() {
         });
         mean[c] /= rows;
       }
+      thatMDS.DEBUG && thatMDS.noNaNs(mean);
 
+      thatMDS.DEBUG && eigenVecs.noNaNs();
+      thatMDS.DEBUG && thatMDS.noZeros(eigenVals);
       var tmp = eigenVecs.createArray(eigenVecs.rows(), eigenVecs.cols());
       var pos = 0;
       for(var r = 0;r < eigenVecs.rows();r += 1) {
-        var div = Math.sqrt(eigenVals[r]);
+        var div = Math.sqrt(Math.abs(eigenVals[r])); // TODO not sure how to handle negative values
         eigenVecs.rowIter(r, function(v) {
           tmp[pos] = v / div;
           pos += 1;
         });
       }
+      thatMDS.DEBUG && thatMDS.noNaNs(tmp);
+
       var positions = dist.createArray(cols, dims);
       pos = 0;
       for(var e = 0;e < cols;e += 1) {
@@ -183,6 +215,7 @@ mdsjs = function() {
           pos += 1;
         }
       }
+      thatMDS.DEBUG && thatMDS.noNaNs(positions);
       return new Matrix(positions, cols, dims);
     }
 
@@ -316,6 +349,9 @@ mdsjs = function() {
     this.isQuadratic = function() {
       return rows === cols;
     };
+    Matrix.prototype.noNaNs = function() {
+      thatMDS.noNaNs(mat);
+    };
     this.someRows = function(cb) {
       var pos = 0;
       for(var r = 0;r < rows;r += 1) {
@@ -327,7 +363,7 @@ mdsjs = function() {
       return false;
     };
     this.everyRows = function(cb) {
-      return !this.someRow(function(row, ix) {
+      return !this.someRows(function(row, ix) {
         return !cb(row, ix);
       });
     };
