@@ -40,4 +40,4 @@ The algorithm used for calculating the MDS is published at
 ```
 
 Currently, most of the optimizations in the paper are *not* implemented yet, though.
-A Java implementation of the paper can be found at [mdsj] (http://www.inf.uni-konstanz.de/algo/software/mdsj/).
+A Java implementation of the paper can be found at [mdsj](http://www.inf.uni-konstanz.de/algo/software/mdsj/).
