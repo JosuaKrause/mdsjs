@@ -2,52 +2,516 @@
  * Created by krause on 2014-10-25.
  */
 
-mdsjs = function() {
-  var thatMDS = this;
+class Continuation extends Error {
+  constructor(f) {
+    super();
+    this.__continuation = f;
+  }
+}
 
-  this.DEBUG = false;
-  this.noNaNs = function(arr) {
-    for(var ix = 0;ix < arr.length;ix += 1) {
-      if(Number.isNaN(arr[ix])) {
-        throw new Error("NaN in array");
-      }
-    }
-  };
-  this.noZeros = function(arr) {
-    for(var ix = 0;ix < arr.length;ix += 1) {
-      if(Number.isNaN(arr[ix]) || arr[ix] === 0) {
-        throw new Error(arr[ix] === 0 ? "0 in array" : "NaN in array");
-      }
-    }
-  };
-  this.onlyPositive = function(arr) {
-    for(var ix = 0;ix < arr.length;ix += 1) {
-      if(Number.isNaN(arr[ix]) || !(arr[ix] > 0)) {
-        throw new Error(!(arr[ix] > 0) ? arr[ix] + " in array" : "NaN in array");
-      }
-    }
-  };
+export class Matrix {
+  constructor(
+    /** @type {MDSJs} */ mdsjs,
+    /** @type {Float32Array | Float64Array} */ mat,
+    /** @type {number} */ rows,
+    /** @type {number} */ cols,
+  ) {
+    /** @type {MDSJs} */ this._mdsjs = mdsjs;
+    /** @type {Float32Array | Float64Array} */ this._mat = mat;
+    /** @type {number} */ this._rows = rows;
+    /** @type {number} */ this._cols = cols;
+  }
 
-  this.CALL_ASYNC = function(f) {
-    setTimeout(f, 0);
-  };
-  this.getCallDirect = function() {
-    var depth = 0;
-    return function(f) {
-      if(depth > 20) { // prevent stack-overflows
-        throw {
-          __continuation: f
-        };
+  mdsjs() {
+    return this._mdsjs;
+  }
+
+  rows() {
+    return this._rows;
+  }
+
+  cols() {
+    return this._cols;
+  }
+
+  isQuadratic() {
+    return this._rows === this._cols;
+  }
+
+  noNaNs() {
+    this._mdsjs.noNaNs(this._mat);
+  }
+
+  someRows(
+    /** @type {(row: Float32Array | Float64Array, ix: number) => boolean} */ cb,
+  ) {
+    let pos = 0;
+    for (let r = 0; r < this._rows; r += 1) {
+      if (cb(this._mat.subarray(pos, pos + this._cols), r)) {
+        return true;
       }
-      if(!depth) {
-        var cc = f;
-        while(cc) {
+      pos += this._cols;
+    }
+    return false;
+  }
+
+  everyRows(
+    /** @type {(row: Float32Array | Float64Array, ix: number) => boolean} */ cb,
+  ) {
+    return !this.someRows((row, ix) => {
+      return !cb(row, ix);
+    });
+  }
+
+  rowsIter(
+    /** @type {(row: Float32Array | Float64Array, ix: number) => void} */ cb,
+  ) {
+    let pos = 0;
+    for (let r = 0; r < this._rows; r += 1) {
+      cb(this._mat.subarray(pos, pos + this._cols), r);
+      pos += this._cols;
+    }
+  }
+
+  rowIter(
+    /** @type {number} */ row,
+    /** @type {(val: number, row: number, col: number) => void} */ cb,
+  ) {
+    let pos = row * this._cols;
+    for (let ix = 0; ix < this._cols; ix += 1) {
+      cb(this._mat[pos], row, ix);
+      pos += 1;
+    }
+  }
+
+  colIter(
+    /** @type {number} */ col,
+    /** @type {(val: number, row: number, col: number) => void} */ cb,
+  ) {
+    let pos = col;
+    for (let ix = 0; ix < this._rows; ix += 1) {
+      cb(this._mat[pos], ix, col);
+      pos += this._cols;
+    }
+  }
+
+  getUnsafe(/** @type {number} */ pos) {
+    return this._mat[pos];
+  }
+
+  createArray(/** @type {number} */ rows, /** @type {number} */ cols) {
+    const size = rows * cols;
+    return this._mat.byteLength > 24
+      ? new Float64Array(size)
+      : new Float32Array(size);
+  }
+
+  toString() {
+    let res = '';
+    for (let r = 0; r < this.rows(); r += 1) {
+      this.rowIter(r, (e, c) => {
+        res += ` ${e}`;
+      });
+      res += '\n';
+    }
+    return res;
+  }
+
+  iter(
+    /** @type {Matrix} */ matB,
+    /** @type {number} */ row,
+    /** @type {number} */ col,
+    /** @type {(left: number, right: number, row: number, pos: number, col: number) => void} */ cb,
+  ) {
+    Matrix.iter(this, matB, row, col, cb);
+  }
+
+  mul(/** @type {Matrix} */ matB) {
+    return Matrix.mul(this, matB);
+  }
+
+  add(/** @type {Matrix} */ matB) {
+    return Matrix.add(this, matB);
+  }
+
+  neg() {
+    const mat = this.createArray(this.rows(), this.cols());
+    for (let pos = 0; pos < mat.length; pos += 1) {
+      mat[pos] = -this.getUnsafe(pos);
+    }
+    return new Matrix(this._mdsjs, mat, this.rows(), this.cols());
+  }
+
+  scale(/** @type {number} */ scale) {
+    const mat = this.createArray(this.rows(), this.cols());
+    for (let pos = 0; pos < mat.length; pos += 1) {
+      mat[pos] = scale * this.getUnsafe(pos);
+    }
+    return new Matrix(this._mdsjs, mat, this.rows(), this.cols());
+  }
+
+  squareElements() {
+    const mat = this.createArray(this.rows(), this.cols());
+    for (let pos = 0; pos < mat.length; pos += 1) {
+      mat[pos] = this.getUnsafe(pos) * this.getUnsafe(pos);
+    }
+    return new Matrix(this._mdsjs, mat, this.rows(), this.cols());
+  }
+
+  colCenter() {
+    const rows = this.rows();
+    const cols = this.cols();
+    const mat = this.createArray(rows, cols);
+    for (let c = 0; c < cols; c += 1) {
+      let avg = 0;
+      this.colIter(c, (v) => {
+        avg += v;
+      });
+      avg /= rows;
+      let pos = c;
+      this.colIter(c, (v) => {
+        mat[pos] = v - avg;
+        pos += cols;
+      });
+    }
+    return new Matrix(this._mdsjs, mat, rows, cols);
+  }
+
+  rowCenter() {
+    const rows = this.rows();
+    const cols = this.cols();
+    const mat = this.createArray(rows, cols);
+    let pos = 0;
+    for (let r = 0; r < rows; r += 1) {
+      let avg = 0;
+      this.rowIter(r, (v) => {
+        avg += v;
+      });
+      avg /= cols;
+      this.rowIter(r, (v) => {
+        mat[pos] = v - avg;
+        pos += 1;
+      });
+    }
+    return new Matrix(this._mdsjs, mat, rows, cols);
+  }
+
+  doubleCenter() {
+    const rows = this.rows();
+    const cols = this.cols();
+    const mat = this.createArray(rows, cols);
+    for (let r = 0; r < rows; r += 1) {
+      let avg = 0;
+      this.rowIter(r, (v) => {
+        avg += v;
+      });
+      avg /= cols;
+      let pos = r * cols;
+      this.rowIter(r, (v) => {
+        mat[pos] = v - avg;
+        pos += 1;
+      });
+    }
+    for (let c = 0; c < cols; c += 1) {
+      let avg = 0;
+      let pos = c;
+      for (let r = 0; r < rows; r += 1) {
+        avg += mat[pos];
+        pos += cols;
+      }
+      avg /= rows;
+      pos = c;
+      for (let r = 0; r < rows; r += 1) {
+        mat[pos] -= avg;
+        pos += cols;
+      }
+    }
+    return new Matrix(this._mdsjs, mat, rows, cols);
+  }
+
+  distance(/** @type {number} */ colA, /** @type {number} */ colB) {
+    let res = 0;
+    let posA = colA;
+    let posB = colB;
+    for (let r = 0; r < this.rows(); r += 1) {
+      const v = this.getUnsafe(posA) - this.getUnsafe(posB);
+      res += v * v;
+      posA += this.cols();
+      posB += this.cols();
+    }
+    return Math.sqrt(res);
+  }
+
+  eigen(/** @type {Float32Array | Float64Array} */ eigenVals) {
+    let /** @type {Matrix | undefined} */ res;
+    this.eigenAsync(
+      eigenVals,
+      (mat) => {
+        res = mat;
+      },
+      this._mdsjs.getCallDirect(),
+    );
+    return res;
+  }
+
+  eigenAsync(
+    /** @type {Float32Array | Float64Array} */ eigenVals,
+    /** @type {(mat: Matrix) => void} */ cb,
+    /** @type {(cb: () => void) => void} */ argCall,
+  ) {
+    const call = argCall ?? this._mdsjs.CALL_ASYNC;
+    const d = eigenVals.length;
+    const rows = this.rows();
+    const cols = this.cols();
+    const content = this.createArray(rows, cols);
+    let pos = 0;
+    for (let r = 0; r < rows; r += 1) {
+      this.rowIter(r, (v) => {
+        content[pos] = v;
+        pos += 1;
+      });
+    }
+    const eigenVecs = this.createArray(d, rows);
+    let ePos = -rows;
+    let m = 0;
+    let r = 0;
+    let iter = 0;
+
+    const innerLoop = () => {
+      for (let ix = 0; ix < this._mdsjs.EIGEN_ITER_ASYNC; ix += 1) {
+        if (
+          !(
+            Math.abs(1 - r) > this._mdsjs.EIGEN_EPS &&
+            iter < this._mdsjs.EIGEN_ITER
+          )
+        ) {
+          m += 1;
+          iterate();
+          return;
+        }
+        const q = this.createArray(1, rows);
+        pos = 0;
+        for (let rix = 0; rix < rows; rix += 1) {
+          for (let cix = 0; cix < cols; cix += 1) {
+            q[rix] += content[pos] * eigenVecs[ePos + cix];
+            pos += 1;
+          }
+        }
+        eigenVals[m] = this._mdsjs.prod(eigenVecs, ePos, q, 0, rows);
+        this._mdsjs.normalizeVec(q);
+        r = Math.abs(this._mdsjs.prod(eigenVecs, ePos, q, 0, rows));
+        this._mdsjs.xcopy(q, 0, eigenVecs, ePos, rows);
+        iter += 1;
+      }
+      call(innerLoop);
+    }; // innerLoop
+
+    const iterate = () => {
+      if (!(m < d)) {
+        cb(new Matrix(this._mdsjs, eigenVecs, d, rows));
+        return;
+      }
+
+      if (m > 0) {
+        pos = 0;
+        for (let rix = 0; rix < rows; rix += 1) {
+          for (let cix = 0; cix < cols; cix += 1) {
+            content[pos] -=
+              eigenVals[m - 1] * eigenVecs[ePos + rix] * eigenVecs[ePos + cix];
+            pos += 1;
+          }
+        }
+      }
+      ePos += rows;
+      pos = ePos;
+      for (let ix = 0; ix < rows; ix += 1) {
+        eigenVecs[pos] = Math.random();
+        pos += 1;
+      }
+      this._mdsjs.normalizeVec(eigenVecs, ePos, ePos + rows);
+      r = 0;
+      iter = 0;
+
+      call(innerLoop);
+    }; // iterate
+
+    iterate();
+  }
+
+  powerIter() {
+    let /** @type {Float32Array | Float64Array | undefined} */ res;
+    this.powerIterAsync((r) => {
+      res = r;
+    }, this._mdsjs.getCallDirect());
+    return res;
+  }
+
+  powerIterAsync(
+    /** @type {(r: Float32Array | Float64Array) => void} */ cb,
+    /** @type {(cb: () => void) => void} */ argCall,
+  ) {
+    const call = argCall ?? this._mdsjs.CALL_ASYNC;
+    const rows = this.rows();
+    const cols = this.cols();
+    let r = this.createArray(1, cols);
+    for (let ix = 0; ix < cols; ix += 1) {
+      r[ix] = Math.random();
+    }
+    let len = Number.POSITIVE_INFINITY;
+    let stop = false;
+    let iter = 0;
+
+    const iterate = () => {
+      for (let ix = 0; ix < this._mdsjs.EIGEN_ITER_ASYNC; ix += 1) {
+        if (iter >= this._mdsjs.EIGEN_ITER || stop) {
+          cb(r);
+          return;
+        }
+        const s = this.createArray(1, cols);
+        for (let row = 0; row < rows; row += 1) {
+          let prod = 0;
+          this.rowIter(row, (v, row, col) => {
+            prod += v * r[col];
+          });
+          this.rowIter(row, (v, row, col) => {
+            s[col] += prod * v;
+          });
+        }
+        const nl = this._mdsjs.lengthSq(s);
+        if (Math.abs(len - nl) < this._mdsjs.EIGEN_EPS) {
+          stop = true;
+        }
+        len = nl;
+        this._mdsjs.normalizeVec(s);
+        r = s;
+        iter += 1;
+      }
+      call(iterate);
+    };
+
+    iterate();
+  }
+
+  static iter(
+    /** @type {Matrix} */ matA,
+    /** @type {Matrix} */ matB,
+    /** @type {number} */ row,
+    /** @type {number} */ col,
+    /** @type {(left: number, right: number, row: number, pos: number, col: number) => void} */ cb,
+  ) {
+    if (matA.cols() !== matB.rows()) {
+      console.warn(
+        'incompatible dimensions',
+        matA.rows() + 'x' + matA.cols(),
+        matB.rows() + 'x' + matB.cols(),
+      );
+      return;
+    }
+    let posA = row * matA.cols();
+    let posB = col;
+    for (let ix = 0; ix < matA.cols(); ix += 1) {
+      cb(matA.getUnsafe(posA), matB.getUnsafe(posB), row, ix, col);
+      posA += 1;
+      posB += matB.cols();
+    }
+  }
+
+  static mul(/** @type {Matrix} */ matA, /** @type {Matrix} */ matB) {
+    if (matA.cols() !== matB.rows()) {
+      console.warn(
+        'incompatible dimensions',
+        `${matA.rows()}x${matA.cols()}`,
+        `${matB.rows()}x${matB.cols()}`,
+      );
+      return null;
+    }
+    // cache friendly iteration (a rows -> a cols/b rows -> b cols)
+    // TODO experiment with (a cols -> a rows -> b cols)
+    const mat = matA.createArray(matA.rows(), matB.cols());
+    for (let r = 0; r < matA.rows(); r += 1) {
+      matA.rowIter(r, (a, _, k) => {
+        let pos = r * matB.cols();
+        matB.rowIter(k, (b, _, __) => {
+          mat[pos] += a * b;
+          pos += 1;
+        });
+      });
+    }
+    return new Matrix(matA.mdsjs(), mat, matA.rows(), matB.cols());
+  }
+
+  static add(/** @type {Matrix} */ matA, /** @type {Matrix} */ matB) {
+    if (matA.rows() !== matB.rows() || matA.cols() !== matB.cols()) {
+      console.warn(
+        'incompatible dimensions',
+        `${matA.rows()}x${matA.cols()}`,
+        `${matB.rows()}x${matB.cols()}`,
+      );
+      return null;
+    }
+    const mat = matA.createArray(matA.rows(), matA.cols());
+    for (let pos = 0; pos < mat.length; pos += 1) {
+      mat[pos] = matA.getUnsafe(pos) + matB.getUnsafe(pos);
+    }
+    return new Matrix(matA.mdsjs(), mat, matA.rows(), matA.cols());
+  }
+} // Matrix
+
+export class MDSJs {
+  /** @type {boolean} */ DEBUG = false;
+  /** @type {number} */ GRAM_SCHMIDT_EPS = 1e-12;
+  /** @type {number} */ EIGEN_EPS = 1e-7;
+  /** @type {number} */ EIGEN_ITER = 10000;
+  /** @type {number} */ EIGEN_ITER_ASYNC = 200;
+
+  constructor() {}
+
+  noNaNs(/** @type {Float32Array | Float64Array | number[]} */ arr) {
+    for (let ix = 0; ix < arr.length; ix += 1) {
+      if (Number.isNaN(arr[ix])) {
+        throw new Error('NaN in array');
+      }
+    }
+  }
+
+  noZeros(/** @type {Float32Array | Float64Array | number[]} */ arr) {
+    for (let ix = 0; ix < arr.length; ix += 1) {
+      if (Number.isNaN(arr[ix]) || arr[ix] === 0) {
+        throw new Error(arr[ix] === 0 ? '0 in array' : 'NaN in array');
+      }
+    }
+  }
+
+  onlyPositive(/** @type {Float32Array | Float64Array | number[]} */ arr) {
+    for (let ix = 0; ix < arr.length; ix += 1) {
+      if (Number.isNaN(arr[ix]) || !(arr[ix] > 0)) {
+        throw new Error(
+          !(arr[ix] > 0) ? `${arr[ix]} in array` : 'NaN in array',
+        );
+      }
+    }
+  }
+
+  CALL_ASYNC(/** @type {() => void} */ cb) {
+    setTimeout(cb, 0);
+  }
+
+  getCallDirect() {
+    let depth = 0;
+    return (cb) => {
+      if (depth > 20) {
+        // prevent stack-overflows
+        throw new Continuation(cb);
+      }
+      if (!depth) {
+        let cc = cb;
+        while (cc) {
           try {
             depth += 1;
             cc();
             cc = null;
-          } catch(e) {
-            if(!e.__continuation) {
+          } catch (e) {
+            if (!e.__continuation) {
               throw e;
             }
             cc = e.__continuation;
@@ -56,158 +520,204 @@ mdsjs = function() {
         }
       } else {
         depth += 1;
-        f();
+        cb();
       }
     };
-  };
+  }
 
-  this.pca = function(positions) {
-    var res;
-    thatMDS.pcaAsync(positions, function(mat) {
-      res = mat;
-    }, thatMDS.getCallDirect());
+  pca(/** @type {Matrix} */ positions) {
+    let res;
+    this.pcaAsync(
+      positions,
+      (mat) => {
+        res = mat;
+      },
+      this.getCallDirect(),
+    );
     return res;
-  };
-  this.pcaAsync = function(positions, cb, argCall) {
-    var call = arguments.length > 2 ? argCall : thatMDS.CALL_ASYNC;
-    var centered = positions.colCenter();
-    var rows = centered.rows();
-    var cols = centered.cols();
-    centered.powerIterAsync(function(pca0) {
-      var mat = thatMDS.removeComponent(centered, pca0);
-      mat.powerIterAsync(function(pca1) {
-        var res = centered.createArray(cols, 2);
-        for(var ix = 0;ix < cols;ix += 1) {
-          res[2*ix + 0] = pca0[ix];
-          res[2*ix + 1] = pca1[ix];
+  }
+
+  pcaAsync(
+    /** @type {Matrix} */ positions,
+    /** @type {(mat: Matrix) => void} */ cb,
+    /** @type {(cb: () => void) => void} */ argCall,
+  ) {
+    const call = arguments.length > 2 ? argCall : this.CALL_ASYNC;
+    const centered = positions.colCenter();
+    const cols = centered.cols();
+    centered.powerIterAsync((pca0) => {
+      const mat = this.removeComponent(centered, pca0);
+      mat.powerIterAsync((pca1) => {
+        const res = centered.createArray(cols, 2);
+        for (let ix = 0; ix < cols; ix += 1) {
+          res[2 * ix + 0] = pca0[ix];
+          res[2 * ix + 1] = pca1[ix];
         }
-        cb(new Matrix(res, cols, 2));
+        cb(new Matrix(this, res, cols, 2));
       }, call);
     }, call);
-  };
-  this.GRAM_SCHMIDT_EPS = 1e-12;
-  this.removeComponent = function(mat, comp) {
-    // Gram–Schmidt process
-    var rows = mat.rows();
-    var cols = mat.cols();
-    comp.length === cols || console.warn("incompatible size", comp.length, cols);
+  }
 
-    function proj(vec, from, sub, fromSub, len) {
-      var res = mat.createArray(1, len);
-      var uv = 0;
-      var uu = 0;
-      for(var ix = 0;ix < len;ix += 1) {
+  removeComponent(
+    /** @type {Matrix} */ mat,
+    /** @type {Float32Array | Float64Array} */ comp,
+  ) {
+    // Gram–Schmidt process
+    const rows = mat.rows();
+    const cols = mat.cols();
+    if (comp.length !== cols) {
+      console.warn('incompatible size', comp.length, cols);
+    }
+
+    const proj = (vec, from, sub, fromSub, len) => {
+      const res = mat.createArray(1, len);
+      let uv = 0;
+      let uu = 0;
+      for (let ix = 0; ix < len; ix += 1) {
         uv += sub[fromSub + ix] * vec[from + ix];
         uu += sub[fromSub + ix] * sub[fromSub + ix];
       }
-      if(Math.abs(uv) < thatMDS.GRAM_SCHMIDT_EPS || Math.abs(uu) < thatMDS.GRAM_SCHMIDT_EPS || !Number.isFinite(uu) || !Number.isFinite(uv)) {
-        for(var ix = 0;ix < len;ix += 1) {
+      if (
+        Math.abs(uv) < this.GRAM_SCHMIDT_EPS ||
+        Math.abs(uu) < this.GRAM_SCHMIDT_EPS ||
+        !Number.isFinite(uu) ||
+        !Number.isFinite(uv)
+      ) {
+        for (let ix = 0; ix < len; ix += 1) {
           res[ix] = 0;
         }
       } else {
-        for(var ix = 0;ix < len;ix += 1) {
-          res[ix] = uv / uu * sub[fromSub + ix];
+        for (let ix = 0; ix < len; ix += 1) {
+          res[ix] = (uv / uu) * sub[fromSub + ix];
         }
       }
       return res;
-    }
+    };
 
-    var nextMat = mat.createArray(rows, cols);
-    var pos = 0;
-    for(var r = 0;r < rows;r += 1) {
-      mat.rowIter(r, function(v) {
+    const nextMat = mat.createArray(rows, cols);
+    let pos = 0;
+    for (let r = 0; r < rows; r += 1) {
+      mat.rowIter(r, (v) => {
         nextMat[pos] = v;
         pos += 1;
       });
     }
-    for(var r = 0;r < rows;r += 1) {
-      var curPos = r * cols;
-      thatMDS.normalizeVec(nextMat, curPos, curPos + cols);
-      for(var ix = r + 1;ix < rows;ix += 1) {
-        var pos = ix * cols;
-        var p = proj(nextMat, pos, nextMat, curPos, cols);
-        for(var c = 0;c < cols;c += 1) {
-          nextMat[pos + c] -= p[c];
+    for (let r = 0; r < rows; r += 1) {
+      const curPos = r * cols;
+      this.normalizeVec(nextMat, curPos, curPos + cols);
+      for (let ix = r + 1; ix < rows; ix += 1) {
+        const mPos = ix * cols;
+        const p = proj(nextMat, mPos, nextMat, curPos, cols);
+        for (let c = 0; c < cols; c += 1) {
+          nextMat[mPos + c] -= p[c];
         }
       }
     }
-    return new Matrix(nextMat, rows, cols);
-  };
-  this.pcaPositions = function(positions) {
-    var pca = thatMDS.pca(positions);
-    return positions.mul(pca);
-  };
-  this.landmarkMDS = function(dist, dims) {
-    var res;
-    thatMDS.landmarkMDSAsync(dist, dims, function(mat) {
-      res = mat;
-    }, thatMDS.getCallDirect());
-    return res;
-  };
-  this.landmarkMDSAsync = function(dist, dims, cb, argCall) {
+    return new Matrix(this, nextMat, rows, cols);
+  }
 
-    function landmarkMatrix(mat) {
-      thatMDS.DEBUG && mat.noNaNs();
-      var rows = mat.rows();
-      var cols = mat.cols();
-      var perm = new Uint32Array(rows);
-      for(var r = 0;r < rows;r += 1) {
-        mat.rowIter(r, function(v, r, c) {
-          if(!v) {
+  pcaPositions(/** @type {Matrix} */ positions) {
+    const pca = this.pca(positions);
+    return positions.mul(pca);
+  }
+
+  landmarkMDS(/** @type {Matrix} */ dist, /** @type {number} */ dims) {
+    let res;
+    this.landmarkMDSAsync(
+      dist,
+      dims,
+      (mat) => {
+        res = mat;
+      },
+      this.getCallDirect(),
+    );
+    return res;
+  }
+
+  landmarkMDSAsync(
+    /** @type {Matrix} */ dist,
+    /** @type {number} */ dims,
+    /** @type {(mat: Matrix) => void} */ cb,
+    /** @type {(cb: () => void) => void} */ argCall,
+  ) {
+    const landmarkMatrix = (/** @type {Matrix} */ mat) => {
+      if (this.DEBUG) {
+        mat.noNaNs();
+      }
+      const rows = mat.rows();
+      const cols = mat.cols();
+      const perm = new Uint32Array(rows);
+      for (let r = 0; r < rows; r += 1) {
+        mat.rowIter(r, (v, r, c) => {
+          if (!v) {
             perm[r] = c;
           }
         });
       }
-      thatMDS.DEBUG && thatMDS.noNaNs(perm);
-      var lm = mat.createArray(rows, rows);
-      var pos = 0;
-      for(var r = 0;r < rows;r += 1) {
-        var mPos = r * cols;
-        for(var c = 0;c < cols;c += 1) {
+      if (this.DEBUG) {
+        this.noNaNs(perm);
+      }
+      const lm = mat.createArray(rows, rows);
+      let pos = 0;
+      for (let r = 0; r < rows; r += 1) {
+        const mPos = r * cols;
+        for (let c = 0; c < cols; c += 1) {
           lm[pos] = mat.getUnsafe(mPos + perm[c]);
           pos += 1;
         }
       }
-      thatMDS.DEBUG && thatMDS.noNaNs(lm);
-      return new Matrix(lm, rows, rows);
-    }
+      if (this.DEBUG) {
+        this.noNaNs(lm);
+      }
+      return new Matrix(this, lm, rows, rows);
+    };
 
-    function landmarkResult(dist, dims, eigenVecs, eigenVals) {
-      var rows = dist.rows();
-      var cols = dist.cols();
-      var distSq = dist.squareElements();
-      thatMDS.DEBUG && distSq.noNaNs();
+    const landmarkResult = (
+      /** @type {Matrix} */ dist,
+      /** @type {number} */ dims,
+      /** @type {Matrix} */ eigenVecs,
+      /** @type {Float32Array | Float64Array} */ eigenVals,
+    ) => {
+      const rows = dist.rows();
+      const cols = dist.cols();
+      const distSq = dist.squareElements();
+      if (this.DEBUG) {
+        distSq.noNaNs();
+      }
 
-      var mean = dist.createArray(1, cols);
-      for(var c = 0;c < cols;c += 1) {
-        distSq.colIter(c, function(v) {
+      const mean = dist.createArray(1, cols);
+      for (let c = 0; c < cols; c += 1) {
+        distSq.colIter(c, (v) => {
           mean[c] += v;
         });
         mean[c] /= rows;
       }
-      thatMDS.DEBUG && thatMDS.noNaNs(mean);
-
-      thatMDS.DEBUG && eigenVecs.noNaNs();
-      thatMDS.DEBUG && thatMDS.noZeros(eigenVals);
-      var tmp = eigenVecs.createArray(eigenVecs.rows(), eigenVecs.cols());
-      var pos = 0;
-      for(var r = 0;r < eigenVecs.rows();r += 1) {
-        var div = Math.sqrt(Math.abs(eigenVals[r])); // TODO not sure how to handle negative values
-        eigenVecs.rowIter(r, function(v) {
+      if (this.DEBUG) {
+        this.noNaNs(mean);
+        eigenVecs.noNaNs();
+        this.noZeros(eigenVals);
+      }
+      const tmp = eigenVecs.createArray(eigenVecs.rows(), eigenVecs.cols());
+      let pos = 0;
+      for (let r = 0; r < eigenVecs.rows(); r += 1) {
+        const div = Math.sqrt(Math.abs(eigenVals[r])); // TODO not sure how to handle negative values
+        eigenVecs.rowIter(r, (v) => {
           tmp[pos] = v / div;
           pos += 1;
         });
       }
-      thatMDS.DEBUG && thatMDS.noNaNs(tmp);
+      if (this.DEBUG) {
+        this.noNaNs(tmp);
+      }
 
-      var positions = dist.createArray(cols, dims);
+      const positions = dist.createArray(cols, dims);
       pos = 0;
-      for(var e = 0;e < cols;e += 1) {
-        var m = mean[e];
-        var tPos = 0;
-        for(var d = 0;d < dims;d += 1) {
-          var cur = 0;
-          distSq.colIter(e, function(v) {
+      for (let e = 0; e < cols; e += 1) {
+        const m = mean[e];
+        let tPos = 0;
+        for (let d = 0; d < dims; d += 1) {
+          let cur = 0;
+          distSq.colIter(e, (v) => {
             cur -= 0.5 * (v - m) * tmp[tPos];
             tPos += 1;
           });
@@ -215,487 +725,177 @@ mdsjs = function() {
           pos += 1;
         }
       }
-      thatMDS.DEBUG && thatMDS.noNaNs(positions);
-      return new Matrix(positions, cols, dims);
-    }
+      if (this.DEBUG) {
+        this.noNaNs(positions);
+      }
+      return new Matrix(this, positions, cols, dims);
+    };
 
-    var call = arguments.length > 3 ? argCall : thatMDS.CALL_ASYNC;
-    var lm = landmarkMatrix(dist);
-    var eigenVals = dist.createArray(1, dims);
-    lm.squareElements().doubleCenter().scale(-0.5).eigenAsync(eigenVals, function(eigenVecs) {
-      cb(landmarkResult(dist, dims, eigenVecs, eigenVals));
-    }, call);
-  };
-  this.normalizeVec = function(vec, f, t) {
-    var from = arguments.length > 1 ? f : 0;
-    var to = arguments.length > 2 ? t : vec.length;
-    var sum = 0;
-    for(var i = from;i < to;i += 1) {
-      sum += vec[i] * vec[i];
+    const call = argCall ?? this.CALL_ASYNC;
+    const lm = landmarkMatrix(dist);
+    const eigenVals = dist.createArray(1, dims);
+    lm.squareElements()
+      .doubleCenter()
+      .scale(-0.5)
+      .eigenAsync(
+        eigenVals,
+        (eigenVecs) => {
+          cb(landmarkResult(dist, dims, eigenVecs, eigenVals));
+        },
+        call,
+      );
+  }
+
+  normalizeVec(
+    /** @type {Float32Array | Float64Array | number[]} */ vec,
+    /** @type {number} */ f,
+    /** @type {number} */ t,
+  ) {
+    const from = f ?? 0;
+    const to = t ?? vec.length;
+    let sum = 0;
+    for (let ix = from; ix < to; ix += 1) {
+      sum += vec[ix] * vec[ix];
     }
     sum = Math.sqrt(sum);
-    if(sum < 1e-30 || !Number.isFinite(sum)) { // don't scale when really small
+    if (sum < 1e-30 || !Number.isFinite(sum)) {
+      // don't scale when really small
       return;
     }
-    for(var i = from;i < to;i += 1) {
-      vec[i] /= sum;
+    for (let ix = from; ix < to; ix += 1) {
+      vec[ix] /= sum;
     }
-  };
-  this.lengthSq = function(vec, f, t) {
-    var from = arguments.length > 1 ? f : 0;
-    var to = arguments.length > 2 ? t : vec.length;
-    var sum = 0;
-    for(var i = from;i < to;i += 1) {
-      sum += vec[i] * vec[i];
+  }
+
+  lengthSq(
+    /** @type {Float32Array | Float64Array | number[]} */ vec,
+    /** @type {number} */ f,
+    /** @type {number} */ t,
+  ) {
+    const from = f ?? 0;
+    const to = t ?? vec.length;
+    let sum = 0;
+    for (let ix = from; ix < to; ix += 1) {
+      sum += vec[ix] * vec[ix];
     }
     return sum;
-  };
-  this.prod = function(vecA, fromA, vecB, fromB, len) {
-    var sum = 0;
-    var posA = fromA;
-    var posB = fromB;
-    for(var i = 0;i < len;i += 1) {
+  }
+
+  prod(
+    /** @type {Float32Array | Float64Array | number[]} */ vecA,
+    /** @type {number} */ fromA,
+    /** @type {Float32Array | Float64Array | number[]} */ vecB,
+    /** @type {number} */ fromB,
+    /** @type {number} */ len,
+  ) {
+    let sum = 0;
+    let posA = fromA;
+    let posB = fromB;
+    for (let ix = 0; ix < len; ix += 1) {
       sum += vecA[posA] * vecB[posB];
       posA += 1;
       posB += 1;
     }
     return sum;
-  };
-  this.xcopy = function(fromVec, fromStart, toVec, toStart, len) {
-    var fromPos = fromStart;
-    var toPos = toStart;
-    for(var i = 0;i < len;i += 1) {
+  }
+
+  xcopy(
+    /** @type {Float32Array | Float64Array | number[]} */ fromVec,
+    /** @type {number} */ fromStart,
+    /** @type {Float32Array | Float64Array | number[]} */ toVec,
+    /** @type {number} */ toStart,
+    /** @type {number} */ len,
+  ) {
+    let fromPos = fromStart;
+    let toPos = toStart;
+    for (let ix = 0; ix < len; ix += 1) {
       toVec[toPos] = fromVec[fromPos];
       fromPos += 1;
       toPos += 1;
     }
-  };
-  this.convertToMatrix = function(arrs, useFloat32) {
-    var rows = arrs.length;
-    if(!rows) {
-      console.warn("invalid dimension (rows)", rows);
+  }
+
+  convertToMatrix(
+    /** @type {number[][]} */ arrs,
+    /** @type {boolean} */ useFloat32,
+  ) {
+    const rows = arrs.length;
+    if (!rows) {
+      console.warn('invalid dimension (rows)', rows);
       return null;
     }
-    var cols = arrs[0].length;
-    if(!cols) {
-      console.warn("invalid dimension (cols)", cols);
+    const cols = arrs[0].length;
+    if (!cols) {
+      console.warn('invalid dimension (cols)', cols);
       return null;
     }
-    var size = rows * cols;
-    var mat = useFloat32 ? new Float32Array(size) : new Float64Array(size);
-    var pos = 0;
-    for(var r = 0;r < rows;r += 1) {
-      var row = arrs[r];
-      if(row.length !== cols) {
-        console.warn("invalid dimension in row " + r, row.length, cols);
+    const size = rows * cols;
+    const mat = useFloat32 ? new Float32Array(size) : new Float64Array(size);
+    let pos = 0;
+    for (let r = 0; r < rows; r += 1) {
+      const row = arrs[r];
+      if (row.length !== cols) {
+        console.warn('invalid dimension in row ' + r, row.length, cols);
         return null;
       }
-      for(var c = 0;c < cols;c += 1) {
+      for (let c = 0; c < cols; c += 1) {
         mat[pos] = row[c];
         pos += 1;
       }
     }
-    return new Matrix(mat, rows, cols);
-  };
-  this.eye = function(rows, c, useFloat32) {
-    var cols = arguments.length < 2 ? rows : c;
-    var size = rows * cols;
-    if(rows <= 0 || cols <= 0) {
-      console.warn("invalid dimensions", rows, cols);
+    return new Matrix(this, mat, rows, cols);
+  }
+
+  eye(
+    /** @type {number} */ rows,
+    /** @type {number} */ c,
+    /** @type {boolean} */ useFloat32,
+  ) {
+    const cols = c ?? rows;
+    const size = rows * cols;
+    if (rows <= 0 || cols <= 0) {
+      console.warn('invalid dimensions', rows, cols);
       return null;
     }
-    var mat = useFloat32 ? new Float32Array(size) : new Float64Array(size);
-    var pos = 0;
-    for(var i = 0;i < Math.min(rows, cols);i += 1) {
+    const mat = useFloat32 ? new Float32Array(size) : new Float64Array(size);
+    let pos = 0;
+    for (let ix = 0; ix < Math.min(rows, cols); ix += 1) {
       mat[pos] = 1;
       pos += cols + 1;
     }
-    return new Matrix(mat, rows, cols);
-  };
-  this.pivotRandom = function(m, k) {
-    if(!m.isQuadratic()) {
-      console.warn("quadratic matrix needed", m.rows(), m.cols());
+    return new Matrix(this, mat, rows, cols);
+  }
+
+  pivotRandom(/** @type {Matrix} */ m, /** @type {number} */ k) {
+    if (!m.isQuadratic()) {
+      console.warn('quadratic matrix needed', m.rows(), m.cols());
       return null;
     }
-    if(k < m.rows()) {
-      console.warn("requested more pivots than elements", k, m.rows(), m.cols());
+    if (k < m.rows()) {
+      console.warn(
+        'requested more pivots than elements',
+        k,
+        m.rows(),
+        m.cols(),
+      );
       return null;
     }
-    var mat = m.createArray(k, m.cols());
-    var pivots = {};
-    var pos = 0;
-    for(var i = 0;i < k;i += 1) {
-      var pivot = 0;
+    const mat = m.createArray(k, m.cols());
+    const pivots = {};
+    let pos = 0;
+    for (let ix = 0; ix < k; ix += 1) {
+      let pivot = 0;
       do {
         pivot = Math.random() * m.cols();
-      } while(pivots[pivot]);
+      } while (pivots[pivot]);
       pivots[pivot] = true;
-      for(var c = 0;c < m.cols();c += 1) {
+      for (let c = 0; c < m.cols(); c += 1) {
         mat[pos] = m.distance(pivot, c);
         pos += 1;
       }
     }
-    return new Matrix(mat, k, m.cols());
-  };
+    return new Matrix(this, mat, k, m.cols());
+  }
+} // MDSJs
 
-  function Matrix(mat, rows, cols) {
-
-    this.rows = function() {
-      return rows;
-    };
-    this.cols = function() {
-      return cols;
-    };
-    this.isQuadratic = function() {
-      return rows === cols;
-    };
-    Matrix.prototype.noNaNs = function() {
-      thatMDS.noNaNs(mat);
-    };
-    this.someRows = function(cb) {
-      var pos = 0;
-      for(var r = 0;r < rows;r += 1) {
-        if(cb(mat.subarray(pos, pos + cols), r)) {
-          return true;
-        }
-        pos += cols;
-      }
-      return false;
-    };
-    this.everyRows = function(cb) {
-      return !this.someRows(function(row, ix) {
-        return !cb(row, ix);
-      });
-    };
-    this.rowsIter = function(cb) {
-      var pos = 0;
-      for(var r = 0;r < rows;r += 1) {
-        cb(mat.subarray(pos, pos + cols), r);
-        pos += cols;
-      }
-    };
-    this.rowIter = function(row, cb) {
-      var pos = row * cols;
-      for(var i = 0;i < cols;i += 1) {
-        cb(mat[pos], row, i);
-        pos += 1;
-      }
-    };
-    this.colIter = function(col, cb) {
-      var pos = col;
-      for(var i = 0;i < rows;i += 1) {
-        cb(mat[pos], i, col);
-        pos += cols;
-      }
-    };
-    this.getUnsafe = function(pos) {
-      return mat[pos];
-    };
-    this.createArray = function(rows, cols) {
-      var size = rows * cols;
-      return mat.byteLength > 24 ? new Float64Array(size) : new Float32Array(size);
-    };
-  } // Matrix
-  Matrix.prototype.toString = function() {
-    var res = "";
-    for(var r = 0;r < this.rows();r += 1) {
-      this.rowIter(r, function(e, c) {
-        res += " " + e;
-      });
-      res += "\n";
-    }
-    return res;
-  };
-  Matrix.prototype.iter = function(matB, row, col, cb) {
-    Matrix.iter(this, matB, row, col, cb);
-  };
-  Matrix.prototype.mul = function(matB) {
-    return Matrix.mul(this, matB);
-  };
-  Matrix.prototype.add = function(matB) {
-    return Matrix.add(this, matB);
-  };
-  Matrix.prototype.neg = function() {
-    var mat = this.createArray(this.rows(), this.cols());
-    for(var pos = 0;pos < mat.length;pos += 1) {
-      mat[pos] = -this.getUnsafe(pos);
-    }
-    return new Matrix(mat, this.rows(), this.cols());
-  };
-  Matrix.prototype.scale = function(scale) {
-    var mat = this.createArray(this.rows(), this.cols());
-    for(var pos = 0;pos < mat.length;pos += 1) {
-      mat[pos] = scale * this.getUnsafe(pos);
-    }
-    return new Matrix(mat, this.rows(), this.cols());
-  };
-  Matrix.prototype.squareElements = function() {
-    var mat = this.createArray(this.rows(), this.cols());
-    for(var pos = 0;pos < mat.length;pos += 1) {
-      mat[pos] = this.getUnsafe(pos) * this.getUnsafe(pos);
-    }
-    return new Matrix(mat, this.rows(), this.cols());
-  };
-  Matrix.prototype.colCenter = function() {
-    var rows = this.rows();
-    var cols = this.cols();
-    var orig = this;
-    var mat = this.createArray(rows, cols);
-    for(var c = 0;c < cols;c += 1) {
-      var avg = 0;
-      orig.colIter(c, function(v) {
-        avg += v;
-      });
-      avg /= rows;
-      var pos = c;
-      orig.colIter(c, function(v) {
-        mat[pos] = v - avg;
-        pos += cols;
-      });
-    }
-    return new Matrix(mat, rows, cols);
-  };
-  Matrix.prototype.rowCenter = function() {
-    var rows = this.rows();
-    var cols = this.cols();
-    var orig = this;
-    var mat = this.createArray(rows, cols);
-    var pos = 0;
-    for(var r = 0;r < rows;r += 1) {
-      var avg = 0;
-      orig.rowIter(r, function(v) {
-        avg += v;
-      });
-      avg /= cols;
-      orig.rowIter(r, function(v) {
-        mat[pos] = v - avg;
-        pos += 1;
-      });
-    }
-    return new Matrix(mat, rows, cols);
-  };
-  Matrix.prototype.doubleCenter = function() {
-    var rows = this.rows();
-    var cols = this.cols();
-    var mat = this.createArray(rows, cols);
-    for(var r = 0;r < rows;r += 1) {
-      var avg = 0;
-      this.rowIter(r, function(v) {
-        avg += v;
-      });
-      avg /= cols;
-      var pos = r * cols;
-      this.rowIter(r, function(v) {
-        mat[pos] = v - avg;
-        pos += 1;
-      });
-    }
-    for(var c = 0;c < cols;c += 1) {
-      var avg = 0;
-      var pos = c;
-      for(var r = 0;r < rows;r += 1) {
-        avg += mat[pos];
-        pos += cols;
-      }
-      avg /= rows;
-      pos = c;
-      for(var r = 0;r < rows;r += 1) {
-        mat[pos] -= avg;
-        pos += cols;
-      }
-    }
-    return new Matrix(mat, rows, cols);
-  };
-  Matrix.prototype.distance = function(colA, colB) {
-    var res = 0;
-    var posA = colA;
-    var posB = colB;
-    for(var r = 0;r < this.rows();r += 1) {
-      var v = this.getUnsafe(posA) - this.getUnsafe(posB);
-      res += v * v;
-      posA += this.cols();
-      posB += this.cols();
-    }
-    return Math.sqrt(res);
-  };
-  this.EIGEN_EPS = 1e-7;
-  this.EIGEN_ITER = 10000;
-  this.EIGEN_ITER_ASYNC = 200;
-  Matrix.prototype.eigen = function(eigenVals) {
-    var res;
-    this.eigenAsync(eigenVals, function(mat) {
-      res = mat;
-    }, thatMDS.getCallDirect());
-    return res;
-  };
-  Matrix.prototype.eigenAsync = function(eigenVals, cb, argCall) {
-    var call = arguments.length > 2 ? argCall : thatMDS.CALL_ASYNC;
-    var mat = this;
-    var d = eigenVals.length;
-    var rows = mat.rows();
-    var cols = mat.cols();
-    var content = mat.createArray(rows, cols);
-    var pos = 0;
-    for(var r = 0;r < rows;r += 1) {
-      mat.rowIter(r, function(v) {
-        content[pos] = v;
-        pos += 1;
-      });
-    }
-    var eigenVecs = mat.createArray(d, rows);
-    var ePos = -rows;
-    var m = 0;
-    var r = 0;
-    var iter = 0;
-
-    function innerLoop() {
-      for(var ix = 0;ix < thatMDS.EIGEN_ITER_ASYNC;ix += 1) {
-        if(!(Math.abs(1 - r) > thatMDS.EIGEN_EPS && iter < thatMDS.EIGEN_ITER)) {
-          m += 1;
-          iterate();
-          return;
-        }
-        var q = mat.createArray(1, rows);
-        pos = 0;
-        for(var rix = 0;rix < rows;rix += 1) {
-          for(var cix = 0;cix < cols;cix += 1) {
-            q[rix] += content[pos] * eigenVecs[ePos + cix];
-            pos += 1;
-          }
-        }
-        eigenVals[m] = thatMDS.prod(eigenVecs, ePos, q, 0, rows);
-        thatMDS.normalizeVec(q);
-        r = Math.abs(thatMDS.prod(eigenVecs, ePos, q, 0, rows));
-        thatMDS.xcopy(q, 0, eigenVecs, ePos, rows);
-        iter += 1;
-      }
-      call(innerLoop);
-    } // innerLoop
-
-    function iterate() {
-      if(!(m < d)) {
-        cb(new Matrix(eigenVecs, d, rows));
-        return;
-      }
-
-      if(m > 0) {
-        pos = 0;
-        for(var rix = 0;rix < rows;rix += 1) {
-          for(var cix = 0;cix < cols;cix += 1) {
-            content[pos] -= eigenVals[m - 1] * eigenVecs[ePos + rix] * eigenVecs[ePos + cix];
-            pos += 1;
-          }
-        }
-      }
-      ePos += rows;
-      pos = ePos;
-      for(var i = 0;i < rows;i += 1) {
-        eigenVecs[pos] = Math.random();
-        pos += 1;
-      }
-      thatMDS.normalizeVec(eigenVecs, ePos, ePos + rows);
-      r = 0;
-      iter = 0;
-
-      call(innerLoop);
-    } // iterate
-
-    iterate();
-  };
-  Matrix.prototype.powerIter = function() {
-    var res;
-    this.powerIterAsync(function(r) {
-      res = r;
-    }, thatMDS.getCallDirect());
-    return res;
-  };
-  Matrix.prototype.powerIterAsync = function(cb, argCall) {
-    var call = arguments.length > 1 ? argCall : thatMDS.CALL_ASYNC;
-    var mat = this;
-    var rows = mat.rows();
-    var cols = mat.cols();
-    var r = mat.createArray(1, cols);
-    for(var i = 0;i < cols;i += 1) {
-      r[i] = Math.random();
-    }
-    var len = Number.POSITIVE_INFINITY;
-    var stop = false;
-    var iter = 0;
-
-    function iterate() {
-      for(var ix = 0;ix < thatMDS.EIGEN_ITER_ASYNC;ix += 1) {
-        if(iter >= thatMDS.EIGEN_ITER || stop) {
-          cb(r);
-          return;
-        }
-        var s = mat.createArray(1, cols);
-        for(var row = 0;row < rows;row += 1) {
-          var prod = 0;
-          mat.rowIter(row, function(v, row, col) {
-            prod += v * r[col];
-          });
-          mat.rowIter(row, function(v, row, col) {
-            s[col] += prod * v;
-          });
-        }
-        var nl = thatMDS.lengthSq(s);
-        if(Math.abs(len - nl) < thatMDS.EIGEN_EPS) {
-          stop = true;
-        }
-        len = nl;
-        thatMDS.normalizeVec(s);
-        r = s;
-        iter += 1;
-      }
-      call(iterate);
-    }
-
-    iterate();
-  };
-  Matrix.iter = function(matA, matB, row, col, cb) {
-    if(matA.cols() !== matB.rows()) {
-      console.warn("incompatible dimensions", matA.rows() + "x" + matA.cols(), matB.rows() + "x" + matB.cols());
-      return;
-    }
-    var posA = row * matA.cols();
-    var posB = col;
-    for(var i = 0;i < matA.cols();i += 1) {
-      cb(matA.getUnsafe(posA), matB.getUnsafe(posB), row, i, col);
-      posA += 1;
-      posB += matB.cols();
-    }
-  };
-  Matrix.mul = function(matA, matB) {
-    if(matA.cols() !== matB.rows()) {
-      console.warn("incompatible dimensions", matA.rows() + "x" + matA.cols(), matB.rows() + "x" + matB.cols());
-      return null;
-    }
-    // cache friendly iteration (a rows -> a cols/b rows -> b cols)
-    // TODO experiment with (a cols -> a rows -> b cols)
-    var mat = matA.createArray(matA.rows(), matB.cols());
-    for(var r = 0;r < matA.rows();r += 1) {
-      matA.rowIter(r, function(a, _, k) {
-        var pos = r * matB.cols();
-        matB.rowIter(k, function(b, _, _) {
-          mat[pos] += a * b;
-          pos += 1;
-        });
-      });
-    }
-    return new Matrix(mat, matA.rows(), matB.cols());
-  };
-  Matrix.add = function(matA, matB) {
-    if(matA.rows() !== matB.rows() || matA.cols() !== matB.cols()) {
-      console.warn("incompatible dimensions", matA.rows() + "x" + matA.cols(), matB.rows() + "x" + matB.cols());
-      return null;
-    }
-    var mat = matA.createArray(matA.rows(), matA.cols());
-    for(var pos = 0;pos < mat.length;pos += 1) {
-      mat[pos] = matA.getUnsafe(pos) + matB.getUnsafe(pos);
-    }
-    return new Matrix(mat, matA.rows(), matA.cols());
-  };
-
-}; // mdsjs
-
-mdsjs = new mdsjs(); // create instance
+export default new MDSJs(); // create instance

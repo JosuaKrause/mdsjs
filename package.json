@@ -1,0 +1,34 @@
+{
+  "name": "mdsjs",
+  "version": "1.0.0",
+  "description": "MDS and PCA projections in JavaScript",
+  "type": "module",
+  "main": "mdsjs.js",
+  "scripts": {
+    "lint-fix": "./node_modules/.bin/eslint . --fix",
+    "lint": "./node_modules/.bin/eslint .",
+    "pretty": "prettier . --write",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JosuaKrause/mdsjs.git"
+  },
+  "keywords": [
+    "embedding",
+    "mds",
+    "pca",
+    "projection"
+  ],
+  "author": "Josua Krause",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/JosuaKrause/mdsjs/issues"
+  },
+  "homepage": "https://github.com/JosuaKrause/mdsjs#readme",
+  "devDependencies": {
+    "eslint-config-google": "^0.14.0",
+    "eslint-config-prettier": "^9.0.0",
+    "eslint": "^8.52.0"
+  }
+}
