@@ -4,7 +4,7 @@ Projections for JavaScript
 A library for dimensionality reducing projections for JavaScript.
 So far, PCA and MDS are supported.
 
-Install via:
+Install via the [npm package](https://www.npmjs.com/package/mdsjs):
 ```shell
 npm i --save mdsjs
 ```
