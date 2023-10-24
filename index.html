@@ -23,26 +23,29 @@
     <link rel="canonical" href="https://mdsjs.josuakrause.com/" />
     <link rel="stylesheet" href="./index.css" />
   </head>
-  <body style="margin: 20px auto; width: 800px">
-    <p style="float: right">
-      <canvas
-        id="canvas"
-        width="400"
-        height="400"
-        style="width: 400px; height: 400px"
-      ></canvas>
-    </p>
-    <p>
+  <body>
+    <div class="header">mdsjs</div>
+    <div class="top">
+      <div class="main">
+        <canvas id="canvas" width="400" height="400"></canvas>
+      </div>
+      <div class="filler"></div>
+      <div class="values">
+        <div>Input:</div>
+        <pre id="matrix"></pre>
+        <div>Output:</div>
+        <pre id="output"></pre>
+      </div>
+    </div>
+    <div class="buttons">
       <button id="recompute">recompute</button>
       <button id="switch">switch</button>
       <button id="source">source</button>
-    </p>
-    <p>Computing: <span id="mode"></span></p>
-    Input:
-    <pre id="matrix" style="height: 200px; overflow: auto"></pre>
-    Output:
-    <pre id="output" style="height: 200px; overflow: auto"></pre>
-    <pre id="sourceview"></pre>
+      <div>Computing: <span id="mode"></span></div>
+    </div>
+    <div class="sourceview">
+      <pre id="sourceview"></pre>
+    </div>
     <script type="module" id="jsmain" defer>
       import mdsjs from './mdsjs.js';
 
@@ -76,10 +79,27 @@
         .getElementById('source')
         .addEventListener('click', toggleSource);
 
+      function deindent(/** @type {string} */ text) {
+        const lines = text.split(/\r?\n|\r/);
+        const chomp = lines.reduce(
+          (p, c) =>
+            !c.trimEnd().length
+              ? p
+              : Math.min(p, c.length - c.trimLeft().length),
+          Number.POSITIVE_INFINITY,
+        );
+        return lines.map((line) => line.slice(chomp)).join('\n');
+      }
+
       function updateSource() {
         const elem = document.getElementById('sourceview');
         if (showSource) {
-          elem.innerText = mds ? computeMDS : computePCA;
+          const text = `${mds ? computeMDS : computePCA}`;
+          const left = text.indexOf('{');
+          const right = text.lastIndexOf('}');
+          elem.innerText = `import mdsjs from 'mdsjs';\n${deindent(
+            text.slice(left + 1, right - 1),
+          )}`;
         } else {
           elem.innerText = '';
         }
